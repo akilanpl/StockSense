@@ -1,0 +1,276 @@
+"use client";
+
+import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import { Button } from "@/components/ui/Button";
+import { Card } from "@/components/ui/Card";
+import { EmptyState } from "@/components/ui/EmptyState";
+import { ErrorState } from "@/components/ui/ErrorState";
+import { Icon } from "@/components/ui/Icon";
+import { LoadingState } from "@/components/ui/LoadingState";
+import { PageHeader } from "@/components/layout/PageHeader";
+import { StatusBadge } from "@/components/ui/StatusBadge";
+import { StatusLegend } from "@/components/modules/StatusLegend";
+import { getLocations, getOperations, getProducts, userFacingMessage } from "@/lib/api";
+import { operationStatuses } from "@/lib/statuses";
+import { CreateTransferModal } from "./CreateTransferModal";
+import {
+  formatDate,
+  formatLocation,
+  getStatusBadgeProps,
+  type LocationOption,
+  type ProductOption,
+  type TransferOperation,
+} from "./types";
+
+export function TransfersList() {
+  const [transfers, setTransfers] = useState<TransferOperation[]>([]);
+  const [locations, setLocations] = useState<LocationOption[]>([]);
+  const [products, setProducts] = useState<ProductOption[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [sourceFilter, setSourceFilter] = useState("all");
+  const [destinationFilter, setDestinationFilter] = useState("all");
+  const [isCreateOpen, setIsCreateOpen] = useState(false);
+
+  const fetchData = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      const [opsData, locsData, prodsData] = await Promise.all([
+        getOperations({ type: "TRANSFER" }),
+        getLocations(),
+        getProducts(),
+      ]);
+
+      setTransfers(opsData);
+      setLocations(locsData);
+      setProducts(prodsData);
+    } catch (err: unknown) {
+      setError(userFacingMessage(err));
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
+
+  const filteredTransfers = useMemo(() => {
+    return transfers.filter((item) => {
+      if (statusFilter !== "all" && item.status.toLowerCase() !== statusFilter.toLowerCase()) {
+        return false;
+      }
+
+      if (sourceFilter !== "all" && item.sourceLocationId !== sourceFilter) {
+        return false;
+      }
+
+      if (destinationFilter !== "all" && item.destinationLocationId !== destinationFilter) {
+        return false;
+      }
+
+      if (searchQuery.trim()) {
+        const query = searchQuery.toLowerCase();
+        const matchesRef = item.reference?.toLowerCase().includes(query);
+        const matchesSource = item.sourceLocationCode?.toLowerCase().includes(query);
+        const matchesDestination = item.destinationLocationCode?.toLowerCase().includes(query);
+        const matchesItems = item.items?.some(
+          (line) =>
+            line.productName?.toLowerCase().includes(query) || line.sku?.toLowerCase().includes(query),
+        );
+
+        if (!matchesRef && !matchesSource && !matchesDestination && !matchesItems) {
+          return false;
+        }
+      }
+
+      return true;
+    });
+  }, [transfers, statusFilter, sourceFilter, destinationFilter, searchQuery]);
+
+  function handleTransferCreated(newTransfer: TransferOperation) {
+    setTransfers((prev) => [newTransfer, ...prev]);
+  }
+
+  const filtersActive =
+    searchQuery || statusFilter !== "all" || sourceFilter !== "all" || destinationFilter !== "all";
+
+  return (
+    <div className="space-y-4">
+      <PageHeader
+        title="Transfers"
+        description="Internal moves of stock from a source location to a destination location."
+        actions={
+          <Button onClick={() => setIsCreateOpen(true)}>
+            <Icon name="plus" className="h-4 w-4" />
+            Create Transfer
+          </Button>
+        }
+      />
+
+      <Card>
+        <div className="flex flex-col gap-3 border-b border-border px-4 py-3 lg:flex-row lg:items-center lg:justify-between">
+          <div className="relative flex-1">
+            <Icon
+              name="search"
+              className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted"
+            />
+            <input
+              type="text"
+              placeholder="Search by reference, location, or product..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="h-9 w-full rounded-md border border-border bg-card pl-8 pr-3 text-sm outline-none placeholder:text-muted focus:border-accent focus:ring-2 focus:ring-accent/20"
+            />
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              aria-label="Filter by status"
+              className="h-9 rounded-md border border-border bg-card px-2.5 text-xs text-foreground outline-none focus:border-accent"
+            >
+              <option value="all">All statuses</option>
+              <option value="draft">Draft</option>
+              <option value="waiting">Waiting</option>
+              <option value="ready">Ready</option>
+              <option value="done">Done</option>
+              <option value="canceled">Cancelled</option>
+            </select>
+
+            <select
+              value={sourceFilter}
+              onChange={(e) => setSourceFilter(e.target.value)}
+              aria-label="Filter by source location"
+              className="h-9 rounded-md border border-border bg-card px-2.5 text-xs text-foreground outline-none focus:border-accent"
+            >
+              <option value="all">All source locations</option>
+              {locations.map((loc) => (
+                <option key={loc.id} value={loc.id}>
+                  {loc.name} ({loc.code})
+                </option>
+              ))}
+            </select>
+
+            <select
+              value={destinationFilter}
+              onChange={(e) => setDestinationFilter(e.target.value)}
+              aria-label="Filter by destination location"
+              className="h-9 rounded-md border border-border bg-card px-2.5 text-xs text-foreground outline-none focus:border-accent"
+            >
+              <option value="all">All destination locations</option>
+              {locations.map((loc) => (
+                <option key={loc.id} value={loc.id}>
+                  {loc.name} ({loc.code})
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        <StatusLegend items={operationStatuses} />
+
+        {loading ? (
+          <div className="py-12">
+            <LoadingState label="Loading transfers..." />
+          </div>
+        ) : error ? (
+          <div className="p-4">
+            <ErrorState title="Error loading transfers" description={error} onRetry={fetchData} />
+          </div>
+        ) : filteredTransfers.length === 0 ? (
+          <EmptyState
+            title="No transfers found"
+            description={
+              filtersActive
+                ? "No internal transfers match your active filters."
+                : "Internal transfers will show where stock leaves and where it arrives."
+            }
+          />
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[720px] border-collapse text-left text-sm">
+              <thead>
+                <tr className="border-b border-border bg-background/60">
+                  <th scope="col" className="px-4 py-3 text-xs font-medium text-muted">
+                    Reference
+                  </th>
+                  <th scope="col" className="px-4 py-3 text-xs font-medium text-muted">
+                    Source
+                  </th>
+                  <th scope="col" className="px-4 py-3 text-xs font-medium text-muted">
+                    Destination
+                  </th>
+                  <th scope="col" className="px-4 py-3 text-center text-xs font-medium text-muted">
+                    Lines
+                  </th>
+                  <th scope="col" className="px-4 py-3 text-xs font-medium text-muted">
+                    Created Date
+                  </th>
+                  <th scope="col" className="px-4 py-3 text-xs font-medium text-muted">
+                    Status
+                  </th>
+                  <th scope="col" className="px-4 py-3 text-right text-xs font-medium text-muted">
+                    Action
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {filteredTransfers.map((op) => {
+                  const badgeProps = getStatusBadgeProps(op.status);
+                  return (
+                    <tr key={op.id} className="transition-colors hover:bg-background/40">
+                      <td className="px-4 py-3 font-medium">
+                        <Link
+                          href={`/transfers/${op.id}`}
+                          className="font-semibold text-accent hover:underline"
+                        >
+                          {op.reference}
+                        </Link>
+                      </td>
+                      <td className="px-4 py-3 font-mono text-xs text-foreground">
+                        {formatLocation(op.sourceLocationCode)}
+                      </td>
+                      <td className="px-4 py-3 font-mono text-xs text-foreground">
+                        {formatLocation(op.destinationLocationCode)}
+                      </td>
+                      <td className="px-4 py-3 text-center text-xs font-medium text-muted">
+                        {op.items?.length || 0}
+                      </td>
+                      <td className="px-4 py-3 text-xs text-muted">{formatDate(op.createdAt)}</td>
+                      <td className="px-4 py-3">
+                        <StatusBadge label={badgeProps.label} tone={badgeProps.tone} />
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        <Link
+                          href={`/transfers/${op.id}`}
+                          className="rounded-md border border-border px-2.5 py-1 text-xs font-medium text-foreground hover:bg-background"
+                        >
+                          View
+                        </Link>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
+
+      <CreateTransferModal
+        open={isCreateOpen}
+        onClose={() => setIsCreateOpen(false)}
+        onSuccess={handleTransferCreated}
+        locations={locations}
+        products={products}
+      />
+    </div>
+  );
+}
