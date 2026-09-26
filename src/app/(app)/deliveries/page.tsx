@@ -16,11 +16,15 @@ export default function DeliveriesPage() {
         <CreateRecordButton
           label="Create Delivery"
           title="Create delivery"
-          description="Deliveries are not saved in this phase."
+          description="Fill in the details below. Deliveries are not saved in this phase."
           fields={[
-            { name: "reference", label: "Reference", placeholder: "Delivery reference" },
-            { name: "customer", label: "Deliver to", placeholder: "Customer" },
-            { name: "source", label: "Source location", placeholder: "Warehouse location" },
+            { name: "reference", label: "Reference", placeholder: "e.g. OUT/2024/00123" },
+            { name: "customer", label: "Deliver to", placeholder: "Customer or destination" },
+            { name: "warehouse", label: "Source warehouse", placeholder: "Warehouse" },
+            { name: "source", label: "Source location", placeholder: "e.g. WH/Stock" },
+            { name: "product", label: "Product", placeholder: "Product name or SKU" },
+            { name: "quantity", label: "Quantity", placeholder: "0", type: "text" },
+            { name: "scheduled", label: "Scheduled date", placeholder: "YYYY-MM-DD", type: "text" },
           ]}
         />
       }
@@ -36,10 +40,15 @@ export default function DeliveriesPage() {
             })),
           ],
         },
+        {
+          id: "warehouse",
+          label: "Warehouse",
+          options: [{ value: "all", label: "All warehouses" }],
+        },
       ]}
       columns={columns("Reference", "Deliver to", "Source", "Scheduled", "Status")}
-      emptyTitle="No deliveries"
-      emptyDescription="Outgoing deliveries will show the customer, source location, schedule, and status."
+      emptyTitle="No deliveries found"
+      emptyDescription="Outgoing deliveries will appear here showing the customer, source location, schedule, and status. Use 'Create Delivery' to add a new outgoing operation."
     />
   );
 }
