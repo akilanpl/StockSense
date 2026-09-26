@@ -14,7 +14,7 @@ export const createOperationSchema = z.object({
   partnerId: z.uuid("Partner id is invalid.").nullable().optional(),
   sourceLocationId: locationId,
   destinationLocationId: locationId,
-  createdById: idSchema,
+  createdById: idSchema.optional(),
   items: z.array(operationItemInputSchema).optional(),
 });
 

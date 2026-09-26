@@ -2,6 +2,7 @@ import { readJsonBody } from "@/server/api/request";
 import { apiSuccess } from "@/server/api/response";
 import { withApi } from "@/server/http";
 import { readQuery } from "@/server/http/query";
+import { requireUser } from "@/server/auth";
 import { createOperation, listOperations } from "@/server/operations/operations";
 import { parseInput } from "@/validations/common";
 import { createOperationSchema } from "@/validations/operations";
@@ -13,6 +14,7 @@ export const GET = withApi(async (request) => {
 });
 
 export const POST = withApi(async (request) => {
+  const user = await requireUser(request);
   const input = parseInput(createOperationSchema, await readJsonBody(request));
-  return apiSuccess(await createOperation(input), 201);
+  return apiSuccess(await createOperation({ ...input, createdById: user.id }), 201);
 });

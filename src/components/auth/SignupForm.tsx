@@ -1,14 +1,19 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
+import { signup } from "@/lib/api/auth";
+import { userFacingMessage } from "@/lib/api/errors";
 import { firstFieldErrors, signupSchema } from "@/validations/auth";
 
 export function SignupForm() {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [notice, setNotice] = useState("");
+  const [pending, setPending] = useState(false);
+  const router = useRouter();
 
   return (
     <form
@@ -31,7 +36,18 @@ export function SignupForm() {
         }
 
         setErrors({});
-        setNotice("The form is valid. Account creation is not connected yet.");
+        setNotice("");
+        setPending(true);
+
+        void signup(parsed.data)
+          .then(() => {
+            router.push("/dashboard");
+            router.refresh();
+          })
+          .catch((error: unknown) => {
+            setNotice(userFacingMessage(error));
+            setPending(false);
+          });
       }}
     >
       <Input name="name" label="Name" autoComplete="name" error={errors.name} />
@@ -56,9 +72,9 @@ export function SignupForm() {
         autoComplete="new-password"
         error={errors.confirmPassword}
       />
-      {notice ? <p className="text-xs leading-5 text-muted">{notice}</p> : null}
-      <Button type="submit" className="w-full">
-        Create account
+      {notice ? <p className="text-xs leading-5 text-danger">{notice}</p> : null}
+      <Button type="submit" className="w-full" disabled={pending}>
+        {pending ? "Creating account" : "Create account"}
       </Button>
       <p className="text-center text-sm text-muted">
         Already have an account?{" "}

@@ -2,14 +2,18 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { LogoutButton } from "@/components/auth/LogoutButton";
 import { Icon } from "@/components/ui/Icon";
 import { accountNav, isNavActive, navSections } from "@/lib/navigation";
 import { cn } from "@/lib/cn";
+import type { SessionUser } from "@/types/api";
 
 export function Sidebar({
+  user,
   open,
   onNavigate,
 }: {
+  user: SessionUser | null;
   open: boolean;
   onNavigate: () => void;
 }) {
@@ -74,8 +78,10 @@ export function Sidebar({
         </nav>
         <div className="border-t border-white/10 p-3">
           <div className="rounded-md px-2 py-2">
-            <p className="text-sm font-medium">Signed out</p>
-            <p className="text-xs text-sidebar-muted">Account access is not connected</p>
+            <p className="truncate text-sm font-medium">{user ? user.name : "Signed out"}</p>
+            <p className="truncate text-xs text-sidebar-muted">
+              {user ? user.email : "Account access is not connected"}
+            </p>
           </div>
           <ul className="mt-1 space-y-0.5">
             {accountNav.map((item) => {
@@ -97,14 +103,21 @@ export function Sidebar({
               );
             })}
             <li>
-              <Link
-                href="/login"
-                onClick={onNavigate}
-                className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-white/5"
-              >
-                <Icon name="logout" className="h-4 w-4" />
-                Log out
-              </Link>
+              {user ? (
+                <LogoutButton className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-white/5">
+                  <Icon name="logout" className="h-4 w-4" />
+                  Log out
+                </LogoutButton>
+              ) : (
+                <Link
+                  href="/login"
+                  onClick={onNavigate}
+                  className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-white/5"
+                >
+                  <Icon name="logout" className="h-4 w-4" />
+                  Sign in
+                </Link>
+              )}
             </li>
           </ul>
         </div>

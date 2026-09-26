@@ -1,14 +1,19 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
+import { login } from "@/lib/api/auth";
+import { userFacingMessage } from "@/lib/api/errors";
 import { firstFieldErrors, loginSchema } from "@/validations/auth";
 
 export function LoginForm() {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [notice, setNotice] = useState("");
+  const [pending, setPending] = useState(false);
+  const router = useRouter();
 
   return (
     <form
@@ -29,9 +34,18 @@ export function LoginForm() {
         }
 
         setErrors({});
-        setNotice(
-          "The form is valid. Sign-in is not connected yet, so no session was created.",
-        );
+        setNotice("");
+        setPending(true);
+
+        void login(parsed.data)
+          .then(() => {
+            router.push("/dashboard");
+            router.refresh();
+          })
+          .catch((error: unknown) => {
+            setNotice(userFacingMessage(error));
+            setPending(false);
+          });
       }}
     >
       <Input
@@ -54,9 +68,9 @@ export function LoginForm() {
           Forgot password
         </Link>
       </div>
-      {notice ? <p className="text-xs leading-5 text-muted">{notice}</p> : null}
-      <Button type="submit" className="w-full">
-        Sign in
+      {notice ? <p className="text-xs leading-5 text-danger">{notice}</p> : null}
+      <Button type="submit" className="w-full" disabled={pending}>
+        {pending ? "Signing in" : "Sign in"}
       </Button>
       <p className="text-center text-sm text-muted">
         New to StockSense?{" "}

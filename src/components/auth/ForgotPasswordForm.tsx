@@ -4,11 +4,14 @@ import Link from "next/link";
 import { useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
+import { requestPasswordReset } from "@/lib/api/auth";
+import { userFacingMessage } from "@/lib/api/errors";
 import { firstFieldErrors, forgotPasswordSchema } from "@/validations/auth";
 
 export function ForgotPasswordForm() {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [notice, setNotice] = useState("");
+  const [pending, setPending] = useState(false);
 
   return (
     <form
@@ -26,7 +29,20 @@ export function ForgotPasswordForm() {
         }
 
         setErrors({});
-        setNotice("Password reset is not connected yet. No email was sent.");
+        setNotice("");
+        setPending(true);
+
+        void requestPasswordReset(parsed.data.email)
+          .then((result) => {
+            if (!result.delivered) {
+              setNotice("No email was sent. Password reset delivery is not configured yet.");
+            }
+            setPending(false);
+          })
+          .catch((error: unknown) => {
+            setNotice(userFacingMessage(error));
+            setPending(false);
+          });
       }}
     >
       <Input
@@ -37,8 +53,8 @@ export function ForgotPasswordForm() {
         error={errors.email}
       />
       {notice ? <p className="text-xs leading-5 text-muted">{notice}</p> : null}
-      <Button type="submit" className="w-full">
-        Send reset link
+      <Button type="submit" className="w-full" disabled={pending}>
+        {pending ? "Checking reset" : "Request password reset"}
       </Button>
       <p className="text-center text-sm">
         <Link href="/login" className="font-medium text-accent hover:underline">

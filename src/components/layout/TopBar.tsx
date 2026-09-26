@@ -2,10 +2,12 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { LogoutButton } from "@/components/auth/LogoutButton";
 import { Icon } from "@/components/ui/Icon";
 import { titleForPath } from "@/lib/navigation";
+import type { SessionUser } from "@/types/api";
 
-export function TopBar({ onMenu }: { onMenu: () => void }) {
+export function TopBar({ user, onMenu }: { user: SessionUser | null; onMenu: () => void }) {
   const pathname = usePathname();
   const title = titleForPath(pathname);
 
@@ -32,12 +34,18 @@ export function TopBar({ onMenu }: { onMenu: () => void }) {
         >
           Profile
         </Link>
-        <Link
-          href="/login"
-          className="rounded-md border border-border px-2.5 py-1 text-sm hover:bg-background"
-        >
-          Log out
-        </Link>
+        {user ? (
+          <LogoutButton className="rounded-md border border-border px-2.5 py-1 text-sm hover:bg-background">
+            Log out
+          </LogoutButton>
+        ) : (
+          <Link
+            href="/login"
+            className="rounded-md border border-border px-2.5 py-1 text-sm hover:bg-background"
+          >
+            Sign in
+          </Link>
+        )}
       </div>
     </header>
   );

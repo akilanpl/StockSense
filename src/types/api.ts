@@ -132,6 +132,13 @@ export const dashboardSchema = z.object({
   lowStockItems: z.array(lowStockItemSchema),
 });
 
+export const sessionUserSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  email: z.string(),
+  role: z.enum(["INVENTORY_MANAGER", "WAREHOUSE_STAFF"]),
+});
+
 export const apiFailureSchema = z.object({
   ok: z.literal(false),
   error: z.object({
@@ -155,6 +162,7 @@ export type StockOperation = z.infer<typeof stockOperationSchema>;
 export type StockQuant = z.infer<typeof stockQuantSchema>;
 export type LowStockItem = z.infer<typeof lowStockItemSchema>;
 export type DashboardData = z.infer<typeof dashboardSchema>;
+export type SessionUser = z.infer<typeof sessionUserSchema>;
 export type ApiFailure = z.infer<typeof apiFailureSchema>;
 
 export type ApiSuccess<T> = {
@@ -253,7 +261,7 @@ export type CreateOperationInput = {
   partnerId?: string | null;
   sourceLocationId?: string | null;
   destinationLocationId?: string | null;
-  createdById: string;
+  createdById?: string;
   items?: OperationItemInput[];
 };
 

@@ -15,6 +15,10 @@ export class ApiClientError extends Error {
 export function userFacingMessage(error: unknown) {
   if (error instanceof ApiClientError) {
     if (error.status === 401) {
+      if (error.code === "INVALID_CREDENTIALS") {
+        return error.message;
+      }
+
       return "You need to sign in before continuing.";
     }
 
