@@ -1,4 +1,7 @@
-// Phase 1 foundation only. Inventory models are added in a later phase.
+// StockSense inventory model.
+// stock_move is the historical ledger. stock_quant is the current quantity
+// of one product at one location. Phase 3 updates both in the same transaction.
+// Product does not store an authoritative on-hand quantity.
 
 generator client {
   provider = "prisma-client"
@@ -8,4 +11,277 @@ generator client {
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  INVENTORY_MANAGER
+  WAREHOUSE_STAFF
+
+  @@map("user_role")
+}
+
+enum PartnerType {
+  SUPPLIER
+  CUSTOMER
+
+  @@map("partner_type")
+}
+
+enum LocationType {
+  VIEW
+  INTERNAL
+  VIRTUAL
+
+  @@map("location_type")
+}
+
+enum OperationType {
+  RECEIPT
+  DELIVERY
+  TRANSFER
+  ADJUSTMENT
+
+  @@map("operation_type")
+}
+
+enum OperationStatus {
+  DRAFT
+  WAITING
+  READY
+  DONE
+  CANCELED
+
+  @@map("operation_status")
+}
+
+enum MovementType {
+  RECEIPT
+  DELIVERY
+  TRANSFER
+  ADJUSTMENT
+
+  @@map("movement_type")
+}
+
+model User {
+  id           String   @id @default(uuid()) @db.Uuid
+  name         String
+  email        String   @unique
+  passwordHash String   @map("password_hash")
+  role         UserRole
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  operations StockOperation[]
+
+  @@map("users")
+}
+
+model Partner {
+  id        String      @id @default(uuid()) @db.Uuid
+  name      String
+  type      PartnerType
+  email     String?
+  phone     String?
+  address   String?
+  createdAt DateTime    @default(now()) @map("created_at")
+  updatedAt DateTime    @updatedAt @map("updated_at")
+
+  operations StockOperation[]
+
+  @@index([type])
+  @@map("partners")
+}
+
+model Category {
+  id          String   @id @default(uuid()) @db.Uuid
+  name        String   @unique
+  description String?
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  products Product[]
+
+  @@map("categories")
+}
+
+model UnitOfMeasure {
+  id        String   @id @default(uuid()) @db.Uuid
+  code      String   @unique
+  name      String
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  products Product[]
+
+  @@map("units_of_measure")
+}
+
+model Product {
+  id              String   @id @default(uuid()) @db.Uuid
+  name            String
+  sku             String   @unique
+  categoryId      String   @map("category_id") @db.Uuid
+  unitOfMeasureId String   @map("unit_of_measure_id") @db.Uuid
+  isActive        Boolean  @default(true) @map("is_active")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  category       Category             @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  unitOfMeasure  UnitOfMeasure        @relation(fields: [unitOfMeasureId], references: [id], onDelete: Restrict)
+  operationItems StockOperationItem[]
+  stockMoves     StockMove[]
+  stockQuants    StockQuant[]
+  reorderRules   ReorderRule[]
+
+  @@index([categoryId])
+  @@index([unitOfMeasureId])
+  @@map("products")
+}
+
+model Warehouse {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String
+  code      String   @unique
+  address   String?
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  locations Location[]
+
+  @@map("warehouses")
+}
+
+model Location {
+  id          String       @id @default(uuid()) @db.Uuid
+  warehouseId String       @map("warehouse_id") @db.Uuid
+  parentId    String?      @map("parent_id") @db.Uuid
+  name        String
+  code        String
+  type        LocationType @default(INTERNAL)
+  isActive    Boolean      @default(true) @map("is_active")
+  createdAt   DateTime     @default(now()) @map("created_at")
+  updatedAt   DateTime     @updatedAt @map("updated_at")
+
+  warehouse Warehouse  @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
+  parent    Location?  @relation("LocationHierarchy", fields: [parentId], references: [id], onDelete: Restrict)
+  children  Location[] @relation("LocationHierarchy")
+
+  sourceOperations      StockOperation[] @relation("OperationSource")
+  destinationOperations StockOperation[] @relation("OperationDestination")
+  sourceMoves           StockMove[]      @relation("MoveSource")
+  destinationMoves      StockMove[]      @relation("MoveDestination")
+  stockQuants           StockQuant[]
+  reorderRules          ReorderRule[]
+
+  @@unique([warehouseId, code])
+  @@index([parentId])
+  @@map("locations")
+}
+
+model StockOperation {
+  id                    String          @id @default(uuid()) @db.Uuid
+  reference             String          @unique
+  type                  OperationType
+  status                OperationStatus @default(DRAFT)
+  partnerId             String?         @map("partner_id") @db.Uuid
+  sourceLocationId      String?         @map("source_location_id") @db.Uuid
+  destinationLocationId String?         @map("destination_location_id") @db.Uuid
+  createdById           String          @map("created_by_id") @db.Uuid
+  createdAt             DateTime        @default(now()) @map("created_at")
+  updatedAt             DateTime        @updatedAt @map("updated_at")
+  validatedAt           DateTime?       @map("validated_at")
+  canceledAt            DateTime?       @map("canceled_at")
+
+  partner             Partner?  @relation(fields: [partnerId], references: [id], onDelete: Restrict)
+  sourceLocation      Location? @relation("OperationSource", fields: [sourceLocationId], references: [id], onDelete: Restrict)
+  destinationLocation Location? @relation("OperationDestination", fields: [destinationLocationId], references: [id], onDelete: Restrict)
+  createdBy           User      @relation(fields: [createdById], references: [id], onDelete: Restrict)
+
+  items StockOperationItem[]
+  moves StockMove[]
+
+  @@index([type])
+  @@index([status])
+  @@index([createdAt])
+  @@index([partnerId])
+  @@index([sourceLocationId])
+  @@index([destinationLocationId])
+  @@index([createdById])
+  @@map("stock_operations")
+}
+
+model StockOperationItem {
+  id                String   @id @default(uuid()) @db.Uuid
+  operationId       String   @map("operation_id") @db.Uuid
+  productId         String   @map("product_id") @db.Uuid
+  requestedQuantity Decimal  @map("requested_quantity") @db.Decimal(18, 4)
+  processedQuantity Decimal  @default(0) @map("processed_quantity") @db.Decimal(18, 4)
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  operation StockOperation @relation(fields: [operationId], references: [id], onDelete: Restrict)
+  product   Product        @relation(fields: [productId], references: [id], onDelete: Restrict)
+
+  @@index([operationId])
+  @@index([productId])
+  @@map("stock_operation_items")
+}
+
+model StockMove {
+  id                    String       @id @default(uuid()) @db.Uuid
+  operationId           String       @map("operation_id") @db.Uuid
+  productId             String       @map("product_id") @db.Uuid
+  sourceLocationId      String?      @map("source_location_id") @db.Uuid
+  destinationLocationId String?      @map("destination_location_id") @db.Uuid
+  quantity              Decimal      @db.Decimal(18, 4)
+  movementType          MovementType @map("movement_type")
+  createdAt             DateTime     @default(now()) @map("created_at")
+  completedAt           DateTime?    @map("completed_at")
+
+  operation           StockOperation @relation(fields: [operationId], references: [id], onDelete: Restrict)
+  product             Product        @relation(fields: [productId], references: [id], onDelete: Restrict)
+  sourceLocation      Location?      @relation("MoveSource", fields: [sourceLocationId], references: [id], onDelete: Restrict)
+  destinationLocation Location?      @relation("MoveDestination", fields: [destinationLocationId], references: [id], onDelete: Restrict)
+
+  @@index([productId])
+  @@index([sourceLocationId])
+  @@index([destinationLocationId])
+  @@index([operationId])
+  @@index([createdAt])
+  @@map("stock_moves")
+}
+
+model StockQuant {
+  id         String   @id @default(uuid()) @db.Uuid
+  productId  String   @map("product_id") @db.Uuid
+  locationId String   @map("location_id") @db.Uuid
+  quantity   Decimal  @db.Decimal(18, 4)
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  product  Product  @relation(fields: [productId], references: [id], onDelete: Restrict)
+  location Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
+
+  @@unique([productId, locationId])
+  @@index([locationId])
+  @@map("stock_quants")
+}
+
+model ReorderRule {
+  id              String   @id @default(uuid()) @db.Uuid
+  productId       String   @map("product_id") @db.Uuid
+  locationId      String   @map("location_id") @db.Uuid
+  minimumQuantity Decimal  @map("minimum_quantity") @db.Decimal(18, 4)
+  targetQuantity  Decimal  @map("target_quantity") @db.Decimal(18, 4)
+  isActive        Boolean  @default(true) @map("is_active")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  product  Product  @relation(fields: [productId], references: [id], onDelete: Restrict)
+  location Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
+
+  @@unique([productId, locationId])
+  @@index([locationId])
+  @@map("reorder_rules")
 }
