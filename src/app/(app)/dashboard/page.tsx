@@ -1,9 +1,10 @@
+import { InventoryHealth } from "@/components/dashboard/InventoryHealth";
 import { KpiCard } from "@/components/dashboard/KpiCard";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Card } from "@/components/ui/Card";
 import { DataTable } from "@/components/ui/DataTable";
 import { StatusBadge } from "@/components/ui/StatusBadge";
-import { getDashboard, getLocations, getMoves, getOperations, getWarehouses } from "@/lib/api";
+import { getDashboard, getLocations, getMoves, getOperations, getStock, getWarehouses } from "@/lib/api";
 import { columns } from "@/lib/columns";
 import { formatLabel, formatTimestamp } from "@/lib/format";
 import type { StatusTone } from "@/types";
@@ -22,12 +23,13 @@ const statusTones: Record<string, StatusTone> = {
 };
 
 export default async function DashboardPage() {
-  const [dashboard, moves, operations, locations, warehouses] = await Promise.all([
+  const [dashboard, moves, operations, locations, warehouses, stock] = await Promise.all([
     getDashboard(),
     getMoves(),
     getOperations(),
     getLocations(),
     getWarehouses(),
+    getStock(),
   ]);
   const locationCodes = new Map(locations.map((location) => [location.id, location.code]));
   const locationWarehouses = new Map(
@@ -68,9 +70,7 @@ export default async function DashboardPage() {
     },
   ];
 
-  const pending = operations.filter(
-    (operation) => openStatuses.has(operation.status) && operation.type !== "ADJUSTMENT",
-  );
+  const pending = operations.filter((operation) => openStatuses.has(operation.status));
 
   return (
     <div className="space-y-4">
@@ -92,11 +92,12 @@ export default async function DashboardPage() {
             </p>
           </div>
           <DataTable
-            columns={columns("When", "Product", "From", "To", "Quantity", "Reference")}
+            columns={columns("When", "Type", "Product", "From", "To", "Quantity", "Reference")}
             rows={moves.slice(0, 8).map((move) => ({
               id: move.id,
               cells: [
                 formatTimestamp(move.createdAt),
+                formatLabel(move.movementType),
                 move.sku ?? move.productId,
                 locationLabel(locationCodes, move.sourceLocationId),
                 locationLabel(locationCodes, move.destinationLocationId),
@@ -116,10 +117,10 @@ export default async function DashboardPage() {
             </p>
           </div>
           <DataTable
-            columns={columns("Product", "Location", "On hand")}
+            columns={columns("Product", "SKU", "Location", "On hand", "Minimum")}
             rows={dashboard.lowStockItems.map((item) => ({
               id: `${item.productId}-${item.locationId}`,
-              cells: [item.sku, item.locationCode, item.quantity],
+              cells: [item.productName, item.sku, item.locationCode, item.quantity, item.minimumQuantity],
             }))}
             emptyTitle="No low-stock items"
             emptyDescription="Items below an active reorder rule will appear here."
@@ -130,7 +131,7 @@ export default async function DashboardPage() {
         <div className="border-b border-border px-3 py-3">
           <h2 className="text-sm font-semibold">Pending Operations</h2>
           <p className="mt-1 text-xs text-muted">
-            Receipts, deliveries, and transfers that still need action.
+            Receipts, deliveries, transfers, and adjustments that still need action.
           </p>
         </div>
         <DataTable
@@ -150,9 +151,10 @@ export default async function DashboardPage() {
             ],
           }))}
           emptyTitle="No pending operations"
-          emptyDescription="Open receipts, deliveries, and transfers will be listed here."
+          emptyDescription="Open receipts, deliveries, transfers, and adjustments will be listed here."
         />
       </Card>
+      <InventoryHealth lowStockItems={dashboard.lowStockItems} stock={stock} />
     </div>
   );
 }

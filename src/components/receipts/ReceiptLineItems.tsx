@@ -9,22 +9,22 @@ import { Modal } from "@/components/ui/Modal";
 import { Select } from "@/components/ui/Select";
 import { addOperationItem, deleteOperationItem, updateOperationItem } from "@/lib/api";
 import { userFacingMessage } from "@/lib/api/errors";
-import type { AdjustmentOperation, ProductOption } from "./types";
+import type { ProductOption, ReceiptOperation } from "./types";
 
-export function AdjustmentLineItems({
+export function ReceiptLineItems({
   operation,
   products,
   isDraft,
   onOperationUpdated,
 }: {
-  operation: AdjustmentOperation;
+  operation: ReceiptOperation;
   products: ProductOption[];
   isDraft: boolean;
-  onOperationUpdated: (operation: AdjustmentOperation) => void;
+  onOperationUpdated: (operation: ReceiptOperation) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [productId, setProductId] = useState("");
-  const [quantity, setQuantity] = useState("0");
+  const [quantity, setQuantity] = useState("1");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editQuantity, setEditQuantity] = useState("");
   const [error, setError] = useState("");
@@ -34,10 +34,8 @@ export function AdjustmentLineItems({
     <Card className="overflow-hidden">
       <div className="flex items-center justify-between border-b border-border px-4 py-3">
         <div>
-          <h2 className="text-sm font-semibold">Counted lines</h2>
-          <p className="mt-0.5 text-xs text-muted">
-            Counted quantity is what you recorded. The adjusted quantity is posted when the operation is validated.
-          </p>
+          <h2 className="text-sm font-semibold">Operation lines</h2>
+          <p className="mt-0.5 text-xs text-muted">Requested and processed quantities for this receipt.</p>
         </div>
         {isDraft ? (
           <Button size="sm" onClick={() => setOpen(true)}>
@@ -46,7 +44,7 @@ export function AdjustmentLineItems({
         ) : null}
       </div>
       {operation.items.length === 0 ? (
-        <EmptyState title="No lines added" description="Add at least one product count before marking this adjustment ready." />
+        <EmptyState title="No lines added" description="Add at least one product before marking this receipt ready." />
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full min-w-[640px] border-collapse text-left text-sm">
@@ -54,8 +52,8 @@ export function AdjustmentLineItems({
               <tr className="border-b border-border bg-background/60">
                 <th className="px-4 py-2 text-xs font-medium text-muted">Product</th>
                 <th className="px-4 py-2 text-xs font-medium text-muted">SKU</th>
-                <th className="px-4 py-2 text-right text-xs font-medium text-muted">Counted</th>
-                <th className="px-4 py-2 text-right text-xs font-medium text-muted">Adjusted</th>
+                <th className="px-4 py-2 text-right text-xs font-medium text-muted">Requested</th>
+                <th className="px-4 py-2 text-right text-xs font-medium text-muted">Processed</th>
                 {isDraft ? <th className="px-4 py-2 text-right text-xs font-medium text-muted">Actions</th> : null}
               </tr>
             </thead>
@@ -76,17 +74,12 @@ export function AdjustmentLineItems({
                           type="button"
                           className="text-xs text-accent"
                           onClick={() => {
-                            if (Number(editQuantity) < 0 || Number.isNaN(Number(editQuantity))) {
-                              setError("Counted quantity cannot be negative.");
-                              return;
-                            }
                             void updateOperationItem(operation.id, item.id, { quantity: editQuantity })
                               .then((updated) => {
                                 onOperationUpdated(updated);
                                 setEditingId(null);
-                                setError("");
                               })
-                              .catch((err: unknown) => setError(userFacingMessage(err)));
+                              .catch((err: unknown) => alert(userFacingMessage(err)));
                           }}
                         >
                           Save
@@ -116,7 +109,7 @@ export function AdjustmentLineItems({
                           if (!confirm("Remove this line?")) return;
                           void deleteOperationItem(operation.id, item.id)
                             .then(onOperationUpdated)
-                            .catch((err: unknown) => setError(userFacingMessage(err)));
+                            .catch((err: unknown) => alert(userFacingMessage(err)));
                         }}
                       >
                         Remove
@@ -129,14 +122,13 @@ export function AdjustmentLineItems({
           </table>
         </div>
       )}
-      {error ? <p className="px-4 pb-3 text-xs text-danger">{error}</p> : null}
-      <Modal open={open} title="Add counted line" onClose={() => setOpen(false)}>
+      <Modal open={open} title="Add product line" onClose={() => setOpen(false)}>
         <form
           className="space-y-3"
           onSubmit={(event) => {
             event.preventDefault();
-            if (!productId || Number(quantity) < 0 || Number.isNaN(Number(quantity))) {
-              setError("Choose a product and a counted quantity of zero or more.");
+            if (!productId || Number(quantity) <= 0) {
+              setError("Choose a product and a quantity greater than zero.");
               return;
             }
             setPending(true);
@@ -145,8 +137,7 @@ export function AdjustmentLineItems({
                 onOperationUpdated(updated);
                 setOpen(false);
                 setProductId("");
-                setQuantity("0");
-                setError("");
+                setQuantity("1");
                 setPending(false);
               })
               .catch((err: unknown) => {
@@ -168,9 +159,9 @@ export function AdjustmentLineItems({
               })),
             ]}
           />
-          <Input label="Counted quantity" type="number" min="0" step="any" value={quantity} onChange={(event) => setQuantity(event.target.value)} />
+          <Input label="Quantity" type="number" min="0.0001" step="any" value={quantity} onChange={(event) => setQuantity(event.target.value)} />
           <div className="flex justify-end gap-2">
-            <Button type="button" variant="secondary" onClick={() => setOpen(false)} disabled={pending}>
+            <Button type="button" variant="secondary" onClick={() => setOpen(false)}>
               Cancel
             </Button>
             <Button type="submit" disabled={pending}>

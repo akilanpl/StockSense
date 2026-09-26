@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
@@ -11,7 +11,6 @@ import { LoadingState } from "@/components/ui/LoadingState";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { StatusLegend } from "@/components/modules/StatusLegend";
-import { useApiQuery } from "@/lib/api/use-api-query";
 import { operationStatuses } from "@/lib/statuses";
 import { CreateDeliveryModal } from "./CreateDeliveryModal";
 import {
@@ -23,14 +22,20 @@ import {
 } from "./types";
 
 export function DeliveriesList() {
-  const [created, setCreated] = useState<DeliveryOperation[]>([]);
-  const [userIdOverride, setUserIdOverride] = useState<string | undefined>();
+  const [deliveries, setDeliveries] = useState<DeliveryOperation[]>([]);
+  const [locations, setLocations] = useState<LocationOption[]>([]);
+  const [products, setProducts] = useState<ProductOption[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  // Filters
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [locationFilter, setLocationFilter] = useState("all");
+
   const [isCreateOpen, setIsCreateOpen] = useState(false);
 
-  const loadPage = useCallback(async () => {
+  const loadDeliveries = useCallback(async () => {
     const [opsRes, locsRes, prodsRes] = await Promise.all([
       fetch("/api/operations?type=DELIVERY"),
       fetch("/api/locations"),
@@ -43,51 +48,68 @@ export function DeliveriesList() {
     }
 
     const opsData: DeliveryOperation[] = opsJson.data || [];
-    let defaultUserId: string | undefined;
-    if (opsData.length > 0 && opsData[0]?.createdById) {
-      defaultUserId = opsData[0].createdById;
-    } else {
-      const stored = typeof window !== "undefined" ? localStorage.getItem("stocksense_user_id") : null;
-      if (stored) defaultUserId = stored;
-    }
 
-    let locations: LocationOption[] = [];
+    let nextLocations: LocationOption[] | null = null;
     if (locsRes.ok) {
       const locsJson = await locsRes.json();
       if (locsJson.ok && Array.isArray(locsJson.data)) {
-        locations = locsJson.data;
+        nextLocations = locsJson.data;
       }
     }
 
-    let products: ProductOption[] = [];
+    let nextProducts: ProductOption[] | null = null;
     if (prodsRes.ok) {
       const prodsJson = await prodsRes.json();
       if (prodsJson.ok && Array.isArray(prodsJson.data)) {
-        products = prodsJson.data;
+        nextProducts = prodsJson.data;
       }
     }
 
-    return { deliveries: opsData, locations, products, defaultUserId };
+    return { opsData, nextLocations, nextProducts };
   }, []);
 
-  const query = useApiQuery(loadPage, "deliveries");
-  const loading = query.status === "loading" && created.length === 0;
-  const error =
-    query.status === "error" && created.length === 0
-      ? query.error instanceof Error
-        ? query.error.message
-        : "Failed to load delivery operations."
-      : null;
-  const deliveries = useMemo(() => {
-    const loaded = query.data?.deliveries ?? [];
-    return [
-      ...created.filter((item) => !loaded.some((existing) => existing.id === item.id)),
-      ...loaded,
-    ];
-  }, [created, query.data]);
-  const locations = query.data?.locations ?? [];
-  const products = query.data?.products ?? [];
-  const defaultUserId = userIdOverride ?? query.data?.defaultUserId;
+  const applyDeliveries = useCallback((result: Awaited<ReturnType<typeof loadDeliveries>>) => {
+    setDeliveries(result.opsData);
+    if (result.nextLocations) {
+      setLocations(result.nextLocations);
+    }
+    if (result.nextProducts) {
+      setProducts(result.nextProducts);
+    }
+    setError(null);
+    setLoading(false);
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+
+    loadDeliveries()
+      .then((result) => {
+        if (active) {
+          applyDeliveries(result);
+        }
+      })
+      .catch((err: unknown) => {
+        if (!active) {
+          return;
+        }
+        setError(err instanceof Error ? err.message : "Failed to load delivery operations.");
+        setLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [applyDeliveries, loadDeliveries]);
+
+  function retry() {
+    setLoading(true);
+    setError(null);
+    void loadDeliveries().then(applyDeliveries).catch((err: unknown) => {
+      setError(err instanceof Error ? err.message : "Failed to load delivery operations.");
+      setLoading(false);
+    });
+  }
 
   const filteredDeliveries = useMemo(() => {
     return deliveries.filter((item) => {
@@ -121,10 +143,7 @@ export function DeliveriesList() {
   }, [deliveries, statusFilter, locationFilter, searchQuery]);
 
   function handleDeliveryCreated(newDelivery: DeliveryOperation) {
-    setCreated((prev) => [newDelivery, ...prev.filter((item) => item.id !== newDelivery.id)]);
-    if (newDelivery.createdById) {
-      setUserIdOverride(newDelivery.createdById);
-    }
+    setDeliveries((prev) => [newDelivery, ...prev]);
   }
 
   return (
@@ -200,10 +219,7 @@ export function DeliveriesList() {
             <ErrorState
               title="Error loading deliveries"
               description={error}
-              onRetry={() => {
-                setCreated([]);
-                query.reload();
-              }}
+              onRetry={retry}
             />
           </div>
         ) : filteredDeliveries.length === 0 ? (
@@ -294,7 +310,6 @@ export function DeliveriesList() {
         onSuccess={handleDeliveryCreated}
         locations={locations}
         products={products}
-        defaultUserId={defaultUserId}
       />
     </div>
   );

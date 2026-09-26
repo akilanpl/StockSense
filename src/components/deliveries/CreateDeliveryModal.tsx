@@ -5,6 +5,8 @@ import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
 import { Select } from "@/components/ui/Select";
+import { createOperation } from "@/lib/api";
+import { userFacingMessage } from "@/lib/api/errors";
 import type { DeliveryOperation, LocationOption, ProductOption } from "./types";
 
 type CreateDeliveryModalProps = {
@@ -13,10 +15,12 @@ type CreateDeliveryModalProps = {
   onSuccess: (delivery: DeliveryOperation) => void;
   locations: LocationOption[];
   products: ProductOption[];
-  defaultUserId?: string;
 };
 
-const DEV_CUSTOMER_ID = "00000000-0000-4000-8000-0000000000a2";
+const SEEDED_CUSTOMER = {
+  id: "00000000-0000-4000-8000-0000000000a2",
+  name: "DEV Customer",
+};
 
 export function CreateDeliveryModal({
   open,
@@ -24,14 +28,12 @@ export function CreateDeliveryModal({
   onSuccess,
   locations,
   products,
-  defaultUserId,
 }: CreateDeliveryModalProps) {
   const [reference, setReference] = useState("");
-  const [partnerId, setPartnerId] = useState(DEV_CUSTOMER_ID);
+  const [partnerId, setPartnerId] = useState("");
   const [sourceLocationId, setSourceLocationId] = useState(locations[0]?.id || "");
   const [productId, setProductId] = useState("");
   const [quantity, setQuantity] = useState("1");
-  const [createdById, setCreatedById] = useState(defaultUserId || "");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -48,12 +50,6 @@ export function CreateDeliveryModal({
       return;
     }
 
-    const userId = (createdById || defaultUserId || "").trim();
-    if (!userId) {
-      setError("A valid creator user ID is required. Please check system user setup.");
-      return;
-    }
-
     let itemsPayload: Array<{ productId: string; quantity: string }> = [];
     if (productId) {
       const parsedQty = parseFloat(quantity);
@@ -67,51 +63,26 @@ export function CreateDeliveryModal({
     setLoading(true);
 
     try {
-      const payload: Record<string, unknown> = {
+      const delivery = await createOperation({
         type: "DELIVERY",
         sourceLocationId: locId,
-        createdById: userId,
-      };
-
-      if (reference.trim()) {
-        payload.reference = reference.trim();
-      }
-
-      if (partnerId.trim()) {
-        payload.partnerId = partnerId.trim();
-      }
-
-      if (itemsPayload.length > 0) {
-        payload.items = itemsPayload;
-      }
-
-      const res = await fetch("/api/operations", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
+        reference: reference.trim() || undefined,
+        partnerId: partnerId || null,
+        items: itemsPayload.length > 0 ? itemsPayload : undefined,
       });
 
-      const json = await res.json();
-
-      if (!res.ok || !json.ok) {
-        throw new Error(json.error?.message || "Failed to create delivery.");
+      if (delivery.type !== "DELIVERY") {
+        throw new Error("Created operation was not a delivery.");
       }
 
-      // Store successfully used user ID for convenience
-      try {
-        localStorage.setItem("stocksense_user_id", userId);
-      } catch {
-        // ignore localStorage access issues
-      }
-
-      onSuccess(json.data);
+      onSuccess(delivery as DeliveryOperation);
       onClose();
       // Reset form
       setReference("");
       setProductId("");
       setQuantity("1");
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "An unexpected error occurred.");
+      setError(userFacingMessage(err));
     } finally {
       setLoading(false);
     }
@@ -157,12 +128,14 @@ export function CreateDeliveryModal({
           onChange={(e) => setSourceLocationId(e.target.value)}
         />
 
-        <Input
-          label="Customer / Partner ID"
-          placeholder="Customer UUID"
+        <Select
+          label="Customer"
           value={partnerId}
-          onChange={(e) => setPartnerId(e.target.value)}
-          hint="Default test customer pre-filled"
+          onChange={(event) => setPartnerId(event.target.value)}
+          options={[
+            { value: "", label: "No customer" },
+            { value: SEEDED_CUSTOMER.id, label: SEEDED_CUSTOMER.name },
+          ]}
         />
 
         <div className="rounded-md border border-border p-3">
@@ -192,17 +165,6 @@ export function CreateDeliveryModal({
             />
           </div>
         </div>
-
-        {/* User ID field if not auto-detected */}
-        {!defaultUserId ? (
-          <Input
-            label="Created By User ID"
-            placeholder="User UUID"
-            value={createdById}
-            onChange={(e) => setCreatedById(e.target.value)}
-            hint="UUID of active user"
-          />
-        ) : null}
 
         <div className="flex justify-end gap-2 pt-2">
           <Button

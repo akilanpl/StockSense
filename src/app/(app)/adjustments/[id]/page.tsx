@@ -8,6 +8,5 @@ export default async function AdjustmentDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-
   return <AdjustmentDetailView adjustmentId={id} />;
 }

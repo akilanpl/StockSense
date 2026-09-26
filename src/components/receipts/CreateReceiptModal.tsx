@@ -5,11 +5,11 @@ import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
 import { Select } from "@/components/ui/Select";
+import { SEEDED_SUPPLIER, type LocationOption, type ProductOption, type ReceiptOperation } from "./types";
 import { createOperation } from "@/lib/api";
 import { userFacingMessage } from "@/lib/api/errors";
-import type { AdjustmentOperation, LocationOption, ProductOption } from "./types";
 
-export function CreateAdjustmentModal({
+export function CreateReceiptModal({
   open,
   onClose,
   onSuccess,
@@ -18,23 +18,24 @@ export function CreateAdjustmentModal({
 }: {
   open: boolean;
   onClose: () => void;
-  onSuccess: (adjustment: AdjustmentOperation) => void;
+  onSuccess: (receipt: ReceiptOperation) => void;
   locations: LocationOption[];
   products: ProductOption[];
 }) {
-  const spots = locations.filter((location) => location.isActive && location.type === "INTERNAL");
+  const destinations = locations.filter((location) => location.isActive && location.type === "INTERNAL");
   const [reference, setReference] = useState("");
-  const [locationId, setLocationId] = useState(spots[0]?.id ?? "");
+  const [partnerId, setPartnerId] = useState("");
+  const [destinationLocationId, setDestinationLocationId] = useState(destinations[0]?.id ?? "");
   const [productId, setProductId] = useState("");
-  const [quantity, setQuantity] = useState("0");
+  const [quantity, setQuantity] = useState("1");
   const [error, setError] = useState("");
   const [pending, setPending] = useState(false);
 
   return (
     <Modal
       open={open}
-      title="Create adjustment"
-      description="Save a counted quantity as a draft. Stock changes only when the adjustment is validated."
+      title="Create receipt"
+      description="Save an incoming draft. Stock changes only when the receipt is validated."
       onClose={() => {
         if (!pending) onClose();
       }}
@@ -43,29 +44,30 @@ export function CreateAdjustmentModal({
         className="space-y-3"
         onSubmit={(event) => {
           event.preventDefault();
-          const chosen = locationId || spots[0]?.id;
-          if (!chosen) {
-            setError("Choose a location.");
+          const locationId = destinationLocationId || destinations[0]?.id;
+          if (!locationId) {
+            setError("Choose a destination location.");
             return;
           }
-          if (productId && (Number(quantity) < 0 || Number.isNaN(Number(quantity)))) {
-            setError("Counted quantity cannot be negative.");
+          if (productId && (Number(quantity) <= 0 || Number.isNaN(Number(quantity)))) {
+            setError("Quantity must be greater than zero.");
             return;
           }
           setPending(true);
           setError("");
           void createOperation({
-            type: "ADJUSTMENT",
-            destinationLocationId: chosen,
+            type: "RECEIPT",
+            destinationLocationId: locationId,
             reference: reference.trim() || undefined,
+            partnerId: partnerId || null,
             items: productId ? [{ productId, quantity }] : undefined,
           })
-            .then((adjustment) => {
-              onSuccess(adjustment);
+            .then((receipt) => {
+              onSuccess(receipt);
               onClose();
               setReference("");
               setProductId("");
-              setQuantity("0");
+              setQuantity("1");
               setPending(false);
             })
             .catch((err: unknown) => {
@@ -77,10 +79,19 @@ export function CreateAdjustmentModal({
         {error ? <p className="text-xs text-danger">{error}</p> : null}
         <Input label="Reference" hint="Optional. A reference is generated when this is blank." value={reference} onChange={(event) => setReference(event.target.value)} />
         <Select
-          label="Location"
-          value={locationId || spots[0]?.id || ""}
-          onChange={(event) => setLocationId(event.target.value)}
-          options={spots.map((location) => ({
+          label="Supplier"
+          value={partnerId}
+          onChange={(event) => setPartnerId(event.target.value)}
+          options={[
+            { value: "", label: "No supplier" },
+            { value: SEEDED_SUPPLIER.id, label: SEEDED_SUPPLIER.name },
+          ]}
+        />
+        <Select
+          label="Destination location"
+          value={destinationLocationId || destinations[0]?.id || ""}
+          onChange={(event) => setDestinationLocationId(event.target.value)}
+          options={destinations.map((location) => ({
             value: location.id,
             label: `${location.name} (${location.code})`,
           }))}
@@ -97,16 +108,7 @@ export function CreateAdjustmentModal({
             })),
           ]}
         />
-        <Input
-          label="Counted quantity"
-          type="number"
-          min="0"
-          step="any"
-          value={quantity}
-          onChange={(event) => setQuantity(event.target.value)}
-          disabled={!productId}
-          hint="This is the quantity you counted, including zero."
-        />
+        <Input label="Quantity" type="number" min="0.0001" step="any" value={quantity} onChange={(event) => setQuantity(event.target.value)} disabled={!productId} />
         <div className="flex justify-end gap-2">
           <Button type="button" variant="secondary" onClick={onClose} disabled={pending}>
             Cancel

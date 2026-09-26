@@ -17,8 +17,8 @@ import {
 import { userFacingMessage } from "@/lib/api/errors";
 import { useApiQuery } from "@/lib/api/use-api-query";
 import { formatLabel, formatTimestamp } from "@/lib/format";
-import { AdjustmentLineItems } from "./AdjustmentLineItems";
-import type { AdjustmentOperation } from "./types";
+import { ReceiptLineItems } from "./ReceiptLineItems";
+import type { ReceiptOperation } from "./types";
 
 const tones = {
   DRAFT: "neutral",
@@ -28,28 +28,27 @@ const tones = {
   CANCELED: "danger",
 } as const;
 
-export function AdjustmentDetailView({ adjustmentId }: { adjustmentId: string }) {
-  const load = useCallback(() => Promise.all([getOperation(adjustmentId), getProducts()]), [adjustmentId]);
-  const query = useApiQuery(load, adjustmentId);
-  const [adjustment, setAdjustment] = useState<AdjustmentOperation | null>(null);
+export function ReceiptDetailView({ receiptId }: { receiptId: string }) {
+  const load = useCallback(() => Promise.all([getOperation(receiptId), getProducts()]), [receiptId]);
+  const query = useApiQuery(load, receiptId);
+  const [receipt, setReceipt] = useState<ReceiptOperation | null>(null);
   const [actionError, setActionError] = useState("");
   const [actionNotice, setActionNotice] = useState("");
   const [pending, setPending] = useState(false);
 
-  const current = adjustment ?? (query.status === "ready" ? query.data?.[0] : null);
+  const current = receipt ?? (query.status === "ready" ? query.data?.[0] : null);
 
   return (
     <div className="space-y-4">
-      <Link href="/adjustments" className="text-sm text-accent hover:underline">
-        ← Back to Adjustments
+      <Link href="/receipts" className="text-sm text-accent hover:underline">
+        ← Back to Receipts
       </Link>
-      <QueryState status={query.status} data={query.data} error={query.error} onRetry={query.reload} loadingLabel="Loading adjustment">
+      <QueryState status={query.status} data={query.data} error={query.error} onRetry={query.reload} loadingLabel="Loading receipt">
         {([loaded, products]) => {
           const operation = current && current.id === loaded.id ? current : loaded;
-          if (operation.type !== "ADJUSTMENT") {
-            return <ErrorState title="Not an adjustment" description="This operation is not an inventory count." />;
+          if (operation.type !== "RECEIPT") {
+            return <ErrorState title="Not a receipt" description="This operation is not an incoming receipt." />;
           }
-          const location = operation.destinationLocationCode ?? operation.sourceLocationCode ?? "—";
           const draft = operation.status === "DRAFT" || operation.status === "WAITING";
           const ready = operation.status === "READY";
           return (
@@ -69,8 +68,8 @@ export function AdjustmentDetailView({ adjustmentId }: { adjustmentId: string })
                         setActionError("");
                         void markOperationReady(operation.id)
                           .then((updated) => {
-                            setAdjustment(updated);
-                            setActionNotice("Adjustment is ready to validate.");
+                            setReceipt(updated);
+                            setActionNotice("Receipt is ready to validate.");
                             setPending(false);
                           })
                           .catch((err: unknown) => {
@@ -91,8 +90,8 @@ export function AdjustmentDetailView({ adjustmentId }: { adjustmentId: string })
                         setActionError("");
                         void validateOperation(operation.id)
                           .then((updated) => {
-                            setAdjustment(updated);
-                            setActionNotice("Adjustment validated. Stock was updated by the server.");
+                            setReceipt(updated);
+                            setActionNotice("Receipt validated. Stock was updated by the server.");
                             setPending(false);
                           })
                           .catch((err: unknown) => {
@@ -110,12 +109,12 @@ export function AdjustmentDetailView({ adjustmentId }: { adjustmentId: string })
                       variant="secondary"
                       disabled={pending}
                       onClick={() => {
-                        if (!confirm("Cancel this adjustment?")) return;
+                        if (!confirm("Cancel this receipt?")) return;
                         setPending(true);
                         void cancelOperation(operation.id)
                           .then((updated) => {
-                            setAdjustment(updated);
-                            setActionNotice("Adjustment cancelled.");
+                            setReceipt(updated);
+                            setActionNotice("Receipt cancelled.");
                             setPending(false);
                           })
                           .catch((err: unknown) => {
@@ -135,24 +134,25 @@ export function AdjustmentDetailView({ adjustmentId }: { adjustmentId: string })
                 <Card className="p-4">
                   <h2 className="text-sm font-semibold">Operation</h2>
                   <dl className="mt-3 space-y-2 text-sm">
+                    <div className="flex justify-between gap-3"><dt className="text-muted">Supplier</dt><dd>{operation.partnerName ?? "—"}</dd></div>
                     <div className="flex justify-between gap-3"><dt className="text-muted">Status</dt><dd>{operation.status}</dd></div>
                     <div className="flex justify-between gap-3"><dt className="text-muted">Created</dt><dd>{formatTimestamp(operation.createdAt)}</dd></div>
                     <div className="flex justify-between gap-3"><dt className="text-muted">Validated</dt><dd>{operation.validatedAt ? formatTimestamp(operation.validatedAt) : "—"}</dd></div>
-                    <div className="flex justify-between gap-3"><dt className="text-muted">Created by</dt><dd>{operation.createdByName}</dd></div>
                   </dl>
                 </Card>
                 <Card className="p-4">
-                  <h2 className="text-sm font-semibold">Location</h2>
+                  <h2 className="text-sm font-semibold">Destination</h2>
                   <dl className="mt-3 space-y-2 text-sm">
-                    <div className="flex justify-between gap-3"><dt className="text-muted">Counted at</dt><dd className="font-mono text-xs">{location}</dd></div>
+                    <div className="flex justify-between gap-3"><dt className="text-muted">Location</dt><dd>{operation.destinationLocationCode ?? "—"}</dd></div>
+                    <div className="flex justify-between gap-3"><dt className="text-muted">Created by</dt><dd>{operation.createdByName}</dd></div>
                   </dl>
                 </Card>
               </div>
-              <AdjustmentLineItems
+              <ReceiptLineItems
                 operation={operation}
                 products={products}
                 isDraft={operation.status === "DRAFT"}
-                onOperationUpdated={setAdjustment}
+                onOperationUpdated={setReceipt}
               />
             </>
           );
