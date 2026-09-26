@@ -1,6 +1,6 @@
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Card } from "@/components/ui/Card";
-import { DataTable, type DataColumn } from "@/components/ui/DataTable";
+import { DataTable, type DataColumn, type DataRow } from "@/components/ui/DataTable";
 import { FilterBar } from "@/components/ui/FilterBar";
 import { SearchBar } from "@/components/ui/SearchBar";
 import { StatusLegend } from "@/components/modules/StatusLegend";
@@ -11,6 +11,7 @@ type ListPageProps = {
   description: string;
   searchPlaceholder: string;
   columns: DataColumn[];
+  rows?: DataRow[];
   emptyTitle: string;
   emptyDescription: string;
   filters?: FilterDefinition[];
@@ -24,6 +25,7 @@ export function ListPage({
   description,
   searchPlaceholder,
   columns,
+  rows,
   emptyTitle,
   emptyDescription,
   filters = [],
@@ -43,6 +45,7 @@ export function ListPage({
         {statuses ? <StatusLegend items={statuses} /> : null}
         <DataTable
           columns={columns}
+          rows={rows}
           emptyTitle={emptyTitle}
           emptyDescription={emptyDescription}
         />

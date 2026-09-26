@@ -1,9 +1,15 @@
 import { ListPage } from "@/components/modules/ListPage";
+import { getLocations, getMoves } from "@/lib/api";
 import { columns } from "@/lib/columns";
+import { formatLabel, formatTimestamp } from "@/lib/format";
 
+export const dynamic = "force-dynamic";
 export const metadata = { title: "Move History" };
 
-export default function MoveHistoryPage() {
+export default async function MoveHistoryPage() {
+  const [moves, locations] = await Promise.all([getMoves(), getLocations()]);
+  const locationCodes = new Map(locations.map((location) => [location.id, location.code]));
+
   return (
     <ListPage
       title="Move History"
@@ -15,10 +21,10 @@ export default function MoveHistoryPage() {
           label: "Movement type",
           options: [
             { value: "all", label: "All types" },
-            { value: "receipt", label: "Receipt" },
-            { value: "delivery", label: "Delivery" },
-            { value: "transfer", label: "Internal transfer" },
-            { value: "adjustment", label: "Adjustment" },
+            { value: "RECEIPT", label: "Receipt" },
+            { value: "DELIVERY", label: "Delivery" },
+            { value: "TRANSFER", label: "Internal transfer" },
+            { value: "ADJUSTMENT", label: "Adjustment" },
           ],
         },
         {
@@ -33,6 +39,18 @@ export default function MoveHistoryPage() {
         },
       ]}
       columns={columns("When", "Type", "Product", "From", "To", "Quantity", "Reference")}
+      rows={moves.map((move) => ({
+        id: move.id,
+        cells: [
+          formatTimestamp(move.createdAt),
+          formatLabel(move.movementType),
+          move.sku ?? move.productId,
+          locationCodes.get(move.sourceLocationId ?? "") ?? move.sourceLocationId ?? "—",
+          locationCodes.get(move.destinationLocationId ?? "") ?? move.destinationLocationId ?? "—",
+          move.quantity,
+          move.operationReference ?? "—",
+        ],
+      }))}
       emptyTitle="No movements posted"
       emptyDescription="Completed stock moves will appear here with their source, destination, and quantity."
     />

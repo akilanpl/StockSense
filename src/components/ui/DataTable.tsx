@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { EmptyState } from "@/components/ui/EmptyState";
 
 export type DataColumn = {
@@ -6,13 +7,19 @@ export type DataColumn = {
   className?: string;
 };
 
+export type DataRow = {
+  id: string;
+  cells: ReactNode[];
+};
+
 type DataTableProps = {
   columns: DataColumn[];
+  rows?: DataRow[];
   emptyTitle: string;
   emptyDescription: string;
 };
 
-export function DataTable({ columns, emptyTitle, emptyDescription }: DataTableProps) {
+export function DataTable({ columns, rows = [], emptyTitle, emptyDescription }: DataTableProps) {
   return (
     <div className="overflow-x-auto">
       <table className="w-full min-w-[720px] border-collapse text-left text-sm">
@@ -30,11 +37,23 @@ export function DataTable({ columns, emptyTitle, emptyDescription }: DataTablePr
           </tr>
         </thead>
         <tbody>
-          <tr>
-            <td colSpan={columns.length}>
-              <EmptyState title={emptyTitle} description={emptyDescription} />
-            </td>
-          </tr>
+          {rows.length === 0 ? (
+            <tr>
+              <td colSpan={columns.length}>
+                <EmptyState title={emptyTitle} description={emptyDescription} />
+              </td>
+            </tr>
+          ) : (
+            rows.map((row) => (
+              <tr key={row.id} className="border-b border-border last:border-b-0">
+                {row.cells.map((cell, index) => (
+                  <td key={`${row.id}-${columns[index]?.id ?? index}`} className="px-3 py-2">
+                    {cell}
+                  </td>
+                ))}
+              </tr>
+            ))
+          )}
         </tbody>
       </table>
     </div>
