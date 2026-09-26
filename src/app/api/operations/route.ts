@@ -1,9 +1,18 @@
-import { deferredRead, deferredWrite } from "@/server/api/handlers";
+import { readJsonBody } from "@/server/api/request";
+import { apiSuccess } from "@/server/api/response";
+import { withApi } from "@/server/http";
+import { readQuery } from "@/server/http/query";
+import { createOperation, listOperations } from "@/server/operations/operations";
+import { parseInput } from "@/validations/common";
+import { createOperationSchema } from "@/validations/operations";
+import { operationQuerySchema } from "@/validations/queries";
 
-export function GET() {
-  return deferredRead("Operations");
-}
+export const GET = withApi(async (request) => {
+  const filters = parseInput(operationQuerySchema, readQuery(request));
+  return apiSuccess(await listOperations(filters));
+});
 
-export function POST(request: Request) {
-  return deferredWrite(request, "Operations");
-}
+export const POST = withApi(async (request) => {
+  const input = parseInput(createOperationSchema, await readJsonBody(request));
+  return apiSuccess(await createOperation(input), 201);
+});

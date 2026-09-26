@@ -216,6 +216,8 @@ model StockOperationItem {
   id                String   @id @default(uuid()) @db.Uuid
   operationId       String   @map("operation_id") @db.Uuid
   productId         String   @map("product_id") @db.Uuid
+  // Adjustments store the physical count here, including zero.
+  // Receipt, delivery, and transfer quantities stay above zero in the database trigger.
   requestedQuantity Decimal  @map("requested_quantity") @db.Decimal(18, 4)
   processedQuantity Decimal  @default(0) @map("processed_quantity") @db.Decimal(18, 4)
   createdAt         DateTime @default(now()) @map("created_at")

@@ -1,9 +1,13 @@
-import { deferredRead, deferredWrite } from "@/server/api/handlers";
+import { readJsonBody } from "@/server/api/request";
+import { apiSuccess } from "@/server/api/response";
+import { createWarehouse, listWarehouses } from "@/server/catalog/warehouses";
+import { withApi } from "@/server/http";
+import { parseInput } from "@/validations/common";
+import { createWarehouseSchema } from "@/validations/catalog";
 
-export function GET() {
-  return deferredRead("Warehouses");
-}
+export const GET = withApi(async () => apiSuccess(await listWarehouses()));
 
-export function POST(request: Request) {
-  return deferredWrite(request, "Warehouses");
-}
+export const POST = withApi(async (request) => {
+  const input = parseInput(createWarehouseSchema, await readJsonBody(request));
+  return apiSuccess(await createWarehouse(input), 201);
+});

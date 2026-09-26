@@ -1,7 +1,5 @@
-import { deferredRead } from "@/server/api/handlers";
-import { readSearchParam } from "@/server/api/request";
+import { apiSuccess } from "@/server/api/response";
+import { withApi } from "@/server/http";
+import { getDashboard } from "@/server/inventory/dashboard";
 
-export function GET(request: Request) {
-  readSearchParam(request, "warehouse");
-  return deferredRead("Dashboard");
-}
+export const GET = withApi(async () => apiSuccess(await getDashboard()));
