@@ -24,40 +24,76 @@ export function DeliveryDetailView({ deliveryId }: { deliveryId: string }) {
   const [actionLoading, setActionLoading] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
+  const [loadedId, setLoadedId] = useState(deliveryId);
 
-  const fetchDelivery = useCallback(async () => {
-    try {
-      setLoading(true);
-      setError(null);
+  if (loadedId !== deliveryId) {
+    setLoadedId(deliveryId);
+    setLoading(true);
+    setError(null);
+    setDelivery(null);
+  }
 
-      const [opRes, prodRes] = await Promise.all([
-        fetch(`/api/operations/${deliveryId}`),
-        fetch("/api/products"),
-      ]);
+  const loadDelivery = useCallback(async () => {
+    const [opRes, prodRes] = await Promise.all([
+      fetch(`/api/operations/${deliveryId}`),
+      fetch("/api/products"),
+    ]);
 
-      const opJson = await opRes.json();
-      if (!opRes.ok || !opJson.ok) {
-        throw new Error(opJson.error?.message || "Delivery was not found.");
-      }
-
-      setDelivery(opJson.data);
-
-      if (prodRes.ok) {
-        const prodJson = await prodRes.json();
-        if (prodJson.ok && Array.isArray(prodJson.data)) {
-          setProducts(prodJson.data);
-        }
-      }
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Failed to load delivery.");
-    } finally {
-      setLoading(false);
+    const opJson = await opRes.json();
+    if (!opRes.ok || !opJson.ok) {
+      throw new Error(opJson.error?.message || "Delivery was not found.");
     }
+
+    let nextProducts: ProductOption[] | null = null;
+    if (prodRes.ok) {
+      const prodJson = await prodRes.json();
+      if (prodJson.ok && Array.isArray(prodJson.data)) {
+        nextProducts = prodJson.data;
+      }
+    }
+
+    return { delivery: opJson.data as DeliveryOperation, nextProducts };
   }, [deliveryId]);
 
+  const applyDelivery = useCallback((result: Awaited<ReturnType<typeof loadDelivery>>) => {
+    setDelivery(result.delivery);
+    if (result.nextProducts) {
+      setProducts(result.nextProducts);
+    }
+    setError(null);
+    setLoading(false);
+  }, []);
+
   useEffect(() => {
-    fetchDelivery();
-  }, [fetchDelivery]);
+    let active = true;
+
+    loadDelivery()
+      .then((result) => {
+        if (active) {
+          applyDelivery(result);
+        }
+      })
+      .catch((err: unknown) => {
+        if (!active) {
+          return;
+        }
+        setError(err instanceof Error ? err.message : "Failed to load delivery.");
+        setLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [applyDelivery, loadDelivery]);
+
+  function retry() {
+    setLoading(true);
+    setError(null);
+    void loadDelivery().then(applyDelivery).catch((err: unknown) => {
+      setError(err instanceof Error ? err.message : "Failed to load delivery.");
+      setLoading(false);
+    });
+  }
 
   async function handleMarkReady() {
     if (!delivery) return;
@@ -157,7 +193,7 @@ export function DeliveryDetailView({ deliveryId }: { deliveryId: string }) {
         <ErrorState
           title="Delivery not found"
           description={error || "The requested delivery operation could not be loaded."}
-          onRetry={fetchDelivery}
+          onRetry={retry}
         />
       </div>
     );

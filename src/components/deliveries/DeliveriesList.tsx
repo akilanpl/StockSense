@@ -36,56 +36,90 @@ export function DeliveriesList() {
 
   const [isCreateOpen, setIsCreateOpen] = useState(false);
 
-  const fetchData = useCallback(async () => {
-    try {
-      setLoading(true);
-      setError(null);
+  const loadDeliveries = useCallback(async () => {
+    const [opsRes, locsRes, prodsRes] = await Promise.all([
+      fetch("/api/operations?type=DELIVERY"),
+      fetch("/api/locations"),
+      fetch("/api/products"),
+    ]);
 
-      const [opsRes, locsRes, prodsRes] = await Promise.all([
-        fetch("/api/operations?type=DELIVERY"),
-        fetch("/api/locations"),
-        fetch("/api/products"),
-      ]);
-
-      const opsJson = await opsRes.json();
-      if (!opsRes.ok || !opsJson.ok) {
-        throw new Error(opsJson.error?.message || "Failed to load deliveries.");
-      }
-
-      const opsData: DeliveryOperation[] = opsJson.data || [];
-      setDeliveries(opsData);
-
-      // Extract existing userId if available
-      if (opsData.length > 0 && opsData[0]?.createdById) {
-        setDefaultUserId(opsData[0].createdById);
-      } else {
-        const stored = typeof window !== "undefined" ? localStorage.getItem("stocksense_user_id") : null;
-        if (stored) setDefaultUserId(stored);
-      }
-
-      if (locsRes.ok) {
-        const locsJson = await locsRes.json();
-        if (locsJson.ok && Array.isArray(locsJson.data)) {
-          setLocations(locsJson.data);
-        }
-      }
-
-      if (prodsRes.ok) {
-        const prodsJson = await prodsRes.json();
-        if (prodsJson.ok && Array.isArray(prodsJson.data)) {
-          setProducts(prodsJson.data);
-        }
-      }
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Failed to load delivery operations.");
-    } finally {
-      setLoading(false);
+    const opsJson = await opsRes.json();
+    if (!opsRes.ok || !opsJson.ok) {
+      throw new Error(opsJson.error?.message || "Failed to load deliveries.");
     }
+
+    const opsData: DeliveryOperation[] = opsJson.data || [];
+    let nextUserId: string | undefined;
+    if (opsData.length > 0 && opsData[0]?.createdById) {
+      nextUserId = opsData[0].createdById;
+    } else if (typeof window !== "undefined") {
+      nextUserId = localStorage.getItem("stocksense_user_id") ?? undefined;
+    }
+
+    let nextLocations: LocationOption[] | null = null;
+    if (locsRes.ok) {
+      const locsJson = await locsRes.json();
+      if (locsJson.ok && Array.isArray(locsJson.data)) {
+        nextLocations = locsJson.data;
+      }
+    }
+
+    let nextProducts: ProductOption[] | null = null;
+    if (prodsRes.ok) {
+      const prodsJson = await prodsRes.json();
+      if (prodsJson.ok && Array.isArray(prodsJson.data)) {
+        nextProducts = prodsJson.data;
+      }
+    }
+
+    return { opsData, nextUserId, nextLocations, nextProducts };
+  }, []);
+
+  const applyDeliveries = useCallback((result: Awaited<ReturnType<typeof loadDeliveries>>) => {
+    setDeliveries(result.opsData);
+    if (result.nextUserId) {
+      setDefaultUserId(result.nextUserId);
+    }
+    if (result.nextLocations) {
+      setLocations(result.nextLocations);
+    }
+    if (result.nextProducts) {
+      setProducts(result.nextProducts);
+    }
+    setError(null);
+    setLoading(false);
   }, []);
 
   useEffect(() => {
-    fetchData();
-  }, [fetchData]);
+    let active = true;
+
+    loadDeliveries()
+      .then((result) => {
+        if (active) {
+          applyDeliveries(result);
+        }
+      })
+      .catch((err: unknown) => {
+        if (!active) {
+          return;
+        }
+        setError(err instanceof Error ? err.message : "Failed to load delivery operations.");
+        setLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [applyDeliveries, loadDeliveries]);
+
+  function retry() {
+    setLoading(true);
+    setError(null);
+    void loadDeliveries().then(applyDeliveries).catch((err: unknown) => {
+      setError(err instanceof Error ? err.message : "Failed to load delivery operations.");
+      setLoading(false);
+    });
+  }
 
   const filteredDeliveries = useMemo(() => {
     return deliveries.filter((item) => {
@@ -198,7 +232,7 @@ export function DeliveriesList() {
             <ErrorState
               title="Error loading deliveries"
               description={error}
-              onRetry={fetchData}
+              onRetry={retry}
             />
           </div>
         ) : filteredDeliveries.length === 0 ? (

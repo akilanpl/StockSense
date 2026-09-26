@@ -7,7 +7,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { Input } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
 import { Select } from "@/components/ui/Select";
-import type { DeliveryItem, DeliveryOperation, ProductOption } from "./types";
+import type { DeliveryOperation, ProductOption } from "./types";
 
 type DeliveryLineItemsProps = {
   operation: DeliveryOperation;

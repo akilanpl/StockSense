@@ -35,30 +35,54 @@ export function TransfersList() {
   const [destinationFilter, setDestinationFilter] = useState("all");
   const [isCreateOpen, setIsCreateOpen] = useState(false);
 
-  const fetchData = useCallback(async () => {
-    try {
-      setLoading(true);
-      setError(null);
+  const loadTransfers = useCallback(async () => {
+    const [opsData, locsData, prodsData] = await Promise.all([
+      getOperations({ type: "TRANSFER" }),
+      getLocations(),
+      getProducts(),
+    ]);
 
-      const [opsData, locsData, prodsData] = await Promise.all([
-        getOperations({ type: "TRANSFER" }),
-        getLocations(),
-        getProducts(),
-      ]);
+    return { opsData, locsData, prodsData };
+  }, []);
 
-      setTransfers(opsData);
-      setLocations(locsData);
-      setProducts(prodsData);
-    } catch (err: unknown) {
-      setError(userFacingMessage(err));
-    } finally {
-      setLoading(false);
-    }
+  const applyTransfers = useCallback((result: Awaited<ReturnType<typeof loadTransfers>>) => {
+    setTransfers(result.opsData);
+    setLocations(result.locsData);
+    setProducts(result.prodsData);
+    setError(null);
+    setLoading(false);
   }, []);
 
   useEffect(() => {
-    fetchData();
-  }, [fetchData]);
+    let active = true;
+
+    loadTransfers()
+      .then((result) => {
+        if (active) {
+          applyTransfers(result);
+        }
+      })
+      .catch((err: unknown) => {
+        if (!active) {
+          return;
+        }
+        setError(userFacingMessage(err));
+        setLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [applyTransfers, loadTransfers]);
+
+  function retry() {
+    setLoading(true);
+    setError(null);
+    void loadTransfers().then(applyTransfers).catch((err: unknown) => {
+      setError(userFacingMessage(err));
+      setLoading(false);
+    });
+  }
 
   const filteredTransfers = useMemo(() => {
     return transfers.filter((item) => {
@@ -182,7 +206,7 @@ export function TransfersList() {
           </div>
         ) : error ? (
           <div className="p-4">
-            <ErrorState title="Error loading transfers" description={error} onRetry={fetchData} />
+            <ErrorState title="Error loading transfers" description={error} onRetry={retry} />
           </div>
         ) : filteredTransfers.length === 0 ? (
           <EmptyState

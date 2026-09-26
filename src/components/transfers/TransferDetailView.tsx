@@ -35,30 +35,62 @@ export function TransferDetailView({ transferId }: { transferId: string }) {
   const [actionLoading, setActionLoading] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
+  const [loadedId, setLoadedId] = useState(transferId);
 
-  const fetchTransfer = useCallback(async () => {
-    try {
-      setLoading(true);
-      setError(null);
+  if (loadedId !== transferId) {
+    setLoadedId(transferId);
+    setLoading(true);
+    setError(null);
+    setTransfer(null);
+  }
 
-      const [operation, productList] = await Promise.all([getOperation(transferId), getProducts()]);
+  const loadTransfer = useCallback(async () => {
+    const [operation, productList] = await Promise.all([getOperation(transferId), getProducts()]);
 
-      if (operation.type !== "TRANSFER") {
-        throw new Error("This operation is not an internal transfer.");
-      }
-
-      setTransfer(operation);
-      setProducts(productList);
-    } catch (err: unknown) {
-      setError(userFacingMessage(err));
-    } finally {
-      setLoading(false);
+    if (operation.type !== "TRANSFER") {
+      throw new Error("This operation is not an internal transfer.");
     }
+
+    return { operation, productList };
   }, [transferId]);
 
+  const applyTransfer = useCallback((result: Awaited<ReturnType<typeof loadTransfer>>) => {
+    setTransfer(result.operation);
+    setProducts(result.productList);
+    setError(null);
+    setLoading(false);
+  }, []);
+
   useEffect(() => {
-    fetchTransfer();
-  }, [fetchTransfer]);
+    let active = true;
+
+    loadTransfer()
+      .then((result) => {
+        if (active) {
+          applyTransfer(result);
+        }
+      })
+      .catch((err: unknown) => {
+        if (!active) {
+          return;
+        }
+        setError(userFacingMessage(err));
+        setLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [applyTransfer, loadTransfer]);
+
+  function retry() {
+    setLoading(true);
+    setError(null);
+    void loadTransfer().then(applyTransfer).catch((err: unknown) => {
+      setError(userFacingMessage(err));
+      setLoading(false);
+    });
+  }
 
   async function handleMarkReady() {
     if (!transfer) return;
@@ -132,7 +164,7 @@ export function TransferDetailView({ transferId }: { transferId: string }) {
         <ErrorState
           title="Transfer not found"
           description={error || "The requested transfer operation could not be loaded."}
-          onRetry={fetchTransfer}
+          onRetry={retry}
         />
       </div>
     );
