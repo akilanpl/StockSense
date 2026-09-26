@@ -11,97 +11,104 @@ import { LoadingState } from "@/components/ui/LoadingState";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { StatusLegend } from "@/components/modules/StatusLegend";
-import { getLocations, getOperations, getProducts, userFacingMessage } from "@/lib/api";
+import { getLocations, getOperations, getProducts, getStock, userFacingMessage } from "@/lib/api";
 import { useApiQuery } from "@/lib/api/use-api-query";
 import { operationStatuses } from "@/lib/statuses";
-import { CreateTransferModal } from "./CreateTransferModal";
+import { CreateAdjustmentModal } from "./CreateAdjustmentModal";
 import {
-  formatDate,
-  formatLocation,
+  adjustmentLocationCode,
+  adjustmentLocationId,
+  formatDifference,
   getStatusBadgeProps,
-  type TransferOperation,
+  stockKey,
 } from "./types";
 
-export function TransfersList() {
-  const [created, setCreated] = useState<TransferOperation[]>([]);
+export function AdjustmentsList() {
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
-  const [sourceFilter, setSourceFilter] = useState("all");
-  const [destinationFilter, setDestinationFilter] = useState("all");
+  const [productFilter, setProductFilter] = useState("all");
+  const [locationFilter, setLocationFilter] = useState("all");
   const [isCreateOpen, setIsCreateOpen] = useState(false);
 
   const loadPage = useCallback(async () => {
-    const [opsData, locsData, prodsData] = await Promise.all([
-      getOperations({ type: "TRANSFER" }),
+    const [opsData, locsData, prodsData, stockData] = await Promise.all([
+      getOperations({ type: "ADJUSTMENT" }),
       getLocations(),
       getProducts(),
+      getStock(),
     ]);
 
-    return { transfers: opsData, locations: locsData, products: prodsData };
+    const nextStock: Record<string, string> = {};
+    for (const row of stockData) {
+      nextStock[stockKey(row.productId, row.locationId)] = row.quantity;
+    }
+
+    return {
+      adjustments: opsData,
+      locations: locsData,
+      products: prodsData,
+      stockByKey: nextStock,
+    };
   }, []);
 
-  const query = useApiQuery(loadPage, "transfers");
-  const loading = query.status === "loading" && created.length === 0;
-  const error = query.status === "error" && created.length === 0 ? userFacingMessage(query.error) : null;
-  const transfers = useMemo(() => {
-    const loaded = query.data?.transfers ?? [];
-    return [
-      ...created.filter((item) => !loaded.some((existing) => existing.id === item.id)),
-      ...loaded,
-    ];
-  }, [created, query.data]);
+  const query = useApiQuery(loadPage, "adjustments");
+  const loading = query.status === "loading";
+  const error = query.status === "error" ? userFacingMessage(query.error) : null;
+  const adjustments = useMemo(() => query.data?.adjustments ?? [], [query.data]);
   const locations = query.data?.locations ?? [];
   const products = query.data?.products ?? [];
+  const stockByKey = query.data?.stockByKey ?? {};
 
-  const filteredTransfers = useMemo(() => {
-    return transfers.filter((item) => {
+  const filteredAdjustments = useMemo(() => {
+    return adjustments.filter((item) => {
       if (statusFilter !== "all" && item.status.toLowerCase() !== statusFilter.toLowerCase()) {
         return false;
       }
 
-      if (sourceFilter !== "all" && item.sourceLocationId !== sourceFilter) {
+      const locationId = adjustmentLocationId(item);
+      if (locationFilter !== "all" && locationId !== locationFilter) {
         return false;
       }
 
-      if (destinationFilter !== "all" && item.destinationLocationId !== destinationFilter) {
+      if (productFilter !== "all" && !item.items.some((line) => line.productId === productFilter)) {
         return false;
       }
 
       if (searchQuery.trim()) {
         const query = searchQuery.toLowerCase();
         const matchesRef = item.reference?.toLowerCase().includes(query);
-        const matchesSource = item.sourceLocationCode?.toLowerCase().includes(query);
-        const matchesDestination = item.destinationLocationCode?.toLowerCase().includes(query);
+        const matchesLocation = adjustmentLocationCode(item).toLowerCase().includes(query);
         const matchesItems = item.items?.some(
           (line) =>
             line.productName?.toLowerCase().includes(query) || line.sku?.toLowerCase().includes(query),
         );
 
-        if (!matchesRef && !matchesSource && !matchesDestination && !matchesItems) {
+        if (!matchesRef && !matchesLocation && !matchesItems) {
           return false;
         }
       }
 
       return true;
     });
-  }, [transfers, statusFilter, sourceFilter, destinationFilter, searchQuery]);
+  }, [adjustments, statusFilter, productFilter, locationFilter, searchQuery]);
 
-  function handleTransferCreated(newTransfer: TransferOperation) {
-    setCreated((prev) => [newTransfer, ...prev.filter((item) => item.id !== newTransfer.id)]);
+  function handleAdjustmentCreated() {
+    setIsCreateOpen(false);
+    query.reload();
   }
 
   const filtersActive =
-    searchQuery || statusFilter !== "all" || sourceFilter !== "all" || destinationFilter !== "all";
+    searchQuery || statusFilter !== "all" || productFilter !== "all" || locationFilter !== "all";
 
   return (
     <div className="space-y-4">
       <PageHeader
-        title="Transfers"
-        description="Internal moves of stock from a source location to a destination location."
+        title="Adjustments"
+        description="Counted corrections that raise or lower on-hand quantity for a product at a location."
         actions={
           <Button onClick={() => setIsCreateOpen(true)}>
             <Icon name="plus" className="h-4 w-4" />
-            Create Transfer
+            Create Adjustment
           </Button>
         }
       />
@@ -115,7 +122,7 @@ export function TransfersList() {
             />
             <input
               type="text"
-              placeholder="Search by reference, location, or product..."
+              placeholder="Search by reference, product, or location..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="h-9 w-full rounded-md border border-border bg-card pl-8 pr-3 text-sm outline-none placeholder:text-muted focus:border-accent focus:ring-2 focus:ring-accent/20"
@@ -138,26 +145,26 @@ export function TransfersList() {
             </select>
 
             <select
-              value={sourceFilter}
-              onChange={(e) => setSourceFilter(e.target.value)}
-              aria-label="Filter by source location"
+              value={productFilter}
+              onChange={(e) => setProductFilter(e.target.value)}
+              aria-label="Filter by product"
               className="h-9 rounded-md border border-border bg-card px-2.5 text-xs text-foreground outline-none focus:border-accent"
             >
-              <option value="all">All source locations</option>
-              {locations.map((loc) => (
-                <option key={loc.id} value={loc.id}>
-                  {loc.name} ({loc.code})
+              <option value="all">All products</option>
+              {products.map((product) => (
+                <option key={product.id} value={product.id}>
+                  {product.name} ({product.sku})
                 </option>
               ))}
             </select>
 
             <select
-              value={destinationFilter}
-              onChange={(e) => setDestinationFilter(e.target.value)}
-              aria-label="Filter by destination location"
+              value={locationFilter}
+              onChange={(e) => setLocationFilter(e.target.value)}
+              aria-label="Filter by location"
               className="h-9 rounded-md border border-border bg-card px-2.5 text-xs text-foreground outline-none focus:border-accent"
             >
-              <option value="all">All destination locations</option>
+              <option value="all">All locations</option>
               {locations.map((loc) => (
                 <option key={loc.id} value={loc.id}>
                   {loc.name} ({loc.code})
@@ -171,47 +178,40 @@ export function TransfersList() {
 
         {loading ? (
           <div className="py-12">
-            <LoadingState label="Loading transfers..." />
+            <LoadingState label="Loading adjustments..." />
           </div>
         ) : error ? (
           <div className="p-4">
-            <ErrorState
-              title="Error loading transfers"
-              description={error}
-              onRetry={() => {
-                setCreated([]);
-                query.reload();
-              }}
-            />
+            <ErrorState title="Error loading adjustments" description={error} onRetry={query.reload} />
           </div>
-        ) : filteredTransfers.length === 0 ? (
+        ) : filteredAdjustments.length === 0 ? (
           <EmptyState
-            title="No transfers found"
+            title="No adjustments found"
             description={
               filtersActive
-                ? "No internal transfers match your active filters."
-                : "Internal transfers will show where stock leaves and where it arrives."
+                ? "No inventory counts match your active filters."
+                : "Inventory counts will list the product, location, counted quantity, and difference."
             }
           />
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[720px] border-collapse text-left text-sm">
+            <table className="w-full min-w-[780px] border-collapse text-left text-sm">
               <thead>
                 <tr className="border-b border-border bg-background/60">
                   <th scope="col" className="px-4 py-3 text-xs font-medium text-muted">
                     Reference
                   </th>
                   <th scope="col" className="px-4 py-3 text-xs font-medium text-muted">
-                    Source
+                    Product
                   </th>
                   <th scope="col" className="px-4 py-3 text-xs font-medium text-muted">
-                    Destination
+                    Location
                   </th>
-                  <th scope="col" className="px-4 py-3 text-center text-xs font-medium text-muted">
-                    Lines
+                  <th scope="col" className="px-4 py-3 text-right text-xs font-medium text-muted">
+                    Counted
                   </th>
-                  <th scope="col" className="px-4 py-3 text-xs font-medium text-muted">
-                    Created Date
+                  <th scope="col" className="px-4 py-3 text-right text-xs font-medium text-muted">
+                    Difference
                   </th>
                   <th scope="col" className="px-4 py-3 text-xs font-medium text-muted">
                     Status
@@ -222,34 +222,50 @@ export function TransfersList() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
-                {filteredTransfers.map((op) => {
+                {filteredAdjustments.map((op) => {
                   const badgeProps = getStatusBadgeProps(op.status);
+                  const firstItem = op.items[0];
+                  const locationId = adjustmentLocationId(op);
+                  const systemQty =
+                    firstItem && locationId
+                      ? (stockByKey[stockKey(firstItem.productId, locationId)] ?? "0")
+                      : "0";
+                  const productLabel = firstItem
+                    ? op.items.length > 1
+                      ? `${firstItem.productName} +${op.items.length - 1}`
+                      : firstItem.productName
+                    : "—";
+
                   return (
                     <tr key={op.id} className="transition-colors hover:bg-background/40">
                       <td className="px-4 py-3 font-medium">
                         <Link
-                          href={`/transfers/${op.id}`}
+                          href={`/adjustments/${op.id}`}
                           className="font-semibold text-accent hover:underline"
                         >
                           {op.reference}
                         </Link>
                       </td>
+                      <td className="px-4 py-3 text-foreground">{productLabel}</td>
                       <td className="px-4 py-3 font-mono text-xs text-foreground">
-                        {formatLocation(op.sourceLocationCode)}
+                        {adjustmentLocationCode(op)}
                       </td>
-                      <td className="px-4 py-3 font-mono text-xs text-foreground">
-                        {formatLocation(op.destinationLocationCode)}
+                      <td className="px-4 py-3 text-right text-sm font-medium">
+                        {firstItem?.requestedQuantity ?? "—"}
                       </td>
-                      <td className="px-4 py-3 text-center text-xs font-medium text-muted">
-                        {op.items?.length || 0}
+                      <td className="px-4 py-3 text-right text-sm font-medium">
+                        {firstItem
+                          ? op.status === "DONE"
+                            ? firstItem.processedQuantity
+                            : formatDifference(firstItem.requestedQuantity, systemQty)
+                          : "—"}
                       </td>
-                      <td className="px-4 py-3 text-xs text-muted">{formatDate(op.createdAt)}</td>
                       <td className="px-4 py-3">
                         <StatusBadge label={badgeProps.label} tone={badgeProps.tone} />
                       </td>
                       <td className="px-4 py-3 text-right">
                         <Link
-                          href={`/transfers/${op.id}`}
+                          href={`/adjustments/${op.id}`}
                           className="rounded-md border border-border px-2.5 py-1 text-xs font-medium text-foreground hover:bg-background"
                         >
                           View
@@ -264,10 +280,10 @@ export function TransfersList() {
         )}
       </Card>
 
-      <CreateTransferModal
+      <CreateAdjustmentModal
         open={isCreateOpen}
         onClose={() => setIsCreateOpen(false)}
-        onSuccess={handleTransferCreated}
+        onSuccess={handleAdjustmentCreated}
         locations={locations}
         products={products}
       />

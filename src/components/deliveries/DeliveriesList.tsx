@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback, useMemo } from "react";
+import { useCallback, useMemo, useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
@@ -11,6 +11,7 @@ import { LoadingState } from "@/components/ui/LoadingState";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { StatusLegend } from "@/components/modules/StatusLegend";
+import { useApiQuery } from "@/lib/api/use-api-query";
 import { operationStatuses } from "@/lib/statuses";
 import { CreateDeliveryModal } from "./CreateDeliveryModal";
 import {
@@ -22,21 +23,14 @@ import {
 } from "./types";
 
 export function DeliveriesList() {
-  const [deliveries, setDeliveries] = useState<DeliveryOperation[]>([]);
-  const [locations, setLocations] = useState<LocationOption[]>([]);
-  const [products, setProducts] = useState<ProductOption[]>([]);
-  const [defaultUserId, setDefaultUserId] = useState<string | undefined>();
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  // Filters
+  const [created, setCreated] = useState<DeliveryOperation[]>([]);
+  const [userIdOverride, setUserIdOverride] = useState<string | undefined>();
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [locationFilter, setLocationFilter] = useState("all");
-
   const [isCreateOpen, setIsCreateOpen] = useState(false);
 
-  const loadDeliveries = useCallback(async () => {
+  const loadPage = useCallback(async () => {
     const [opsRes, locsRes, prodsRes] = await Promise.all([
       fetch("/api/operations?type=DELIVERY"),
       fetch("/api/locations"),
@@ -49,77 +43,51 @@ export function DeliveriesList() {
     }
 
     const opsData: DeliveryOperation[] = opsJson.data || [];
-    let nextUserId: string | undefined;
+    let defaultUserId: string | undefined;
     if (opsData.length > 0 && opsData[0]?.createdById) {
-      nextUserId = opsData[0].createdById;
-    } else if (typeof window !== "undefined") {
-      nextUserId = localStorage.getItem("stocksense_user_id") ?? undefined;
+      defaultUserId = opsData[0].createdById;
+    } else {
+      const stored = typeof window !== "undefined" ? localStorage.getItem("stocksense_user_id") : null;
+      if (stored) defaultUserId = stored;
     }
 
-    let nextLocations: LocationOption[] | null = null;
+    let locations: LocationOption[] = [];
     if (locsRes.ok) {
       const locsJson = await locsRes.json();
       if (locsJson.ok && Array.isArray(locsJson.data)) {
-        nextLocations = locsJson.data;
+        locations = locsJson.data;
       }
     }
 
-    let nextProducts: ProductOption[] | null = null;
+    let products: ProductOption[] = [];
     if (prodsRes.ok) {
       const prodsJson = await prodsRes.json();
       if (prodsJson.ok && Array.isArray(prodsJson.data)) {
-        nextProducts = prodsJson.data;
+        products = prodsJson.data;
       }
     }
 
-    return { opsData, nextUserId, nextLocations, nextProducts };
+    return { deliveries: opsData, locations, products, defaultUserId };
   }, []);
 
-  const applyDeliveries = useCallback((result: Awaited<ReturnType<typeof loadDeliveries>>) => {
-    setDeliveries(result.opsData);
-    if (result.nextUserId) {
-      setDefaultUserId(result.nextUserId);
-    }
-    if (result.nextLocations) {
-      setLocations(result.nextLocations);
-    }
-    if (result.nextProducts) {
-      setProducts(result.nextProducts);
-    }
-    setError(null);
-    setLoading(false);
-  }, []);
-
-  useEffect(() => {
-    let active = true;
-
-    loadDeliveries()
-      .then((result) => {
-        if (active) {
-          applyDeliveries(result);
-        }
-      })
-      .catch((err: unknown) => {
-        if (!active) {
-          return;
-        }
-        setError(err instanceof Error ? err.message : "Failed to load delivery operations.");
-        setLoading(false);
-      });
-
-    return () => {
-      active = false;
-    };
-  }, [applyDeliveries, loadDeliveries]);
-
-  function retry() {
-    setLoading(true);
-    setError(null);
-    void loadDeliveries().then(applyDeliveries).catch((err: unknown) => {
-      setError(err instanceof Error ? err.message : "Failed to load delivery operations.");
-      setLoading(false);
-    });
-  }
+  const query = useApiQuery(loadPage, "deliveries");
+  const loading = query.status === "loading" && created.length === 0;
+  const error =
+    query.status === "error" && created.length === 0
+      ? query.error instanceof Error
+        ? query.error.message
+        : "Failed to load delivery operations."
+      : null;
+  const deliveries = useMemo(() => {
+    const loaded = query.data?.deliveries ?? [];
+    return [
+      ...created.filter((item) => !loaded.some((existing) => existing.id === item.id)),
+      ...loaded,
+    ];
+  }, [created, query.data]);
+  const locations = query.data?.locations ?? [];
+  const products = query.data?.products ?? [];
+  const defaultUserId = userIdOverride ?? query.data?.defaultUserId;
 
   const filteredDeliveries = useMemo(() => {
     return deliveries.filter((item) => {
@@ -153,9 +121,9 @@ export function DeliveriesList() {
   }, [deliveries, statusFilter, locationFilter, searchQuery]);
 
   function handleDeliveryCreated(newDelivery: DeliveryOperation) {
-    setDeliveries((prev) => [newDelivery, ...prev]);
+    setCreated((prev) => [newDelivery, ...prev.filter((item) => item.id !== newDelivery.id)]);
     if (newDelivery.createdById) {
-      setDefaultUserId(newDelivery.createdById);
+      setUserIdOverride(newDelivery.createdById);
     }
   }
 
@@ -232,7 +200,10 @@ export function DeliveriesList() {
             <ErrorState
               title="Error loading deliveries"
               description={error}
-              onRetry={retry}
+              onRetry={() => {
+                setCreated([]);
+                query.reload();
+              }}
             />
           </div>
         ) : filteredDeliveries.length === 0 ? (

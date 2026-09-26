@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useCallback, useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
@@ -8,6 +8,7 @@ import { ErrorState } from "@/components/ui/ErrorState";
 import { LoadingState } from "@/components/ui/LoadingState";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { DeliveryLineItems } from "./DeliveryLineItems";
+import { useApiQuery } from "@/lib/api/use-api-query";
 import {
   type DeliveryOperation,
   type ProductOption,
@@ -16,22 +17,10 @@ import {
 } from "./types";
 
 export function DeliveryDetailView({ deliveryId }: { deliveryId: string }) {
-  const [delivery, setDelivery] = useState<DeliveryOperation | null>(null);
-  const [products, setProducts] = useState<ProductOption[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
+  const [updated, setUpdated] = useState<DeliveryOperation | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
-  const [loadedId, setLoadedId] = useState(deliveryId);
-
-  if (loadedId !== deliveryId) {
-    setLoadedId(deliveryId);
-    setLoading(true);
-    setError(null);
-    setDelivery(null);
-  }
 
   const loadDelivery = useCallback(async () => {
     const [opRes, prodRes] = await Promise.all([
@@ -44,56 +33,28 @@ export function DeliveryDetailView({ deliveryId }: { deliveryId: string }) {
       throw new Error(opJson.error?.message || "Delivery was not found.");
     }
 
-    let nextProducts: ProductOption[] | null = null;
+    const operation = opJson.data as DeliveryOperation;
+    let products: ProductOption[] = [];
     if (prodRes.ok) {
       const prodJson = await prodRes.json();
       if (prodJson.ok && Array.isArray(prodJson.data)) {
-        nextProducts = prodJson.data;
+        products = prodJson.data;
       }
     }
 
-    return { delivery: opJson.data as DeliveryOperation, nextProducts };
+    return { delivery: operation, products };
   }, [deliveryId]);
 
-  const applyDelivery = useCallback((result: Awaited<ReturnType<typeof loadDelivery>>) => {
-    setDelivery(result.delivery);
-    if (result.nextProducts) {
-      setProducts(result.nextProducts);
-    }
-    setError(null);
-    setLoading(false);
-  }, []);
-
-  useEffect(() => {
-    let active = true;
-
-    loadDelivery()
-      .then((result) => {
-        if (active) {
-          applyDelivery(result);
-        }
-      })
-      .catch((err: unknown) => {
-        if (!active) {
-          return;
-        }
-        setError(err instanceof Error ? err.message : "Failed to load delivery.");
-        setLoading(false);
-      });
-
-    return () => {
-      active = false;
-    };
-  }, [applyDelivery, loadDelivery]);
-
-  function retry() {
-    setLoading(true);
-    setError(null);
-    void loadDelivery().then(applyDelivery).catch((err: unknown) => {
-      setError(err instanceof Error ? err.message : "Failed to load delivery.");
-      setLoading(false);
-    });
-  }
+  const query = useApiQuery(loadDelivery, deliveryId);
+  const delivery = updated?.id === deliveryId ? updated : (query.data?.delivery ?? null);
+  const products = query.data?.products ?? [];
+  const loading = query.status === "loading" && !delivery;
+  const error =
+    query.status === "error" && !delivery
+      ? query.error instanceof Error
+        ? query.error.message
+        : "Failed to load delivery."
+      : null;
 
   async function handleMarkReady() {
     if (!delivery) return;
@@ -118,7 +79,7 @@ export function DeliveryDetailView({ deliveryId }: { deliveryId: string }) {
         throw new Error(json.error?.message || "Failed to mark delivery as Ready.");
       }
 
-      setDelivery(json.data);
+      setUpdated(json.data);
       setActionSuccess("Delivery marked as Ready for validation.");
     } catch (err: unknown) {
       setActionError(err instanceof Error ? err.message : "Failed to update delivery status.");
@@ -144,7 +105,7 @@ export function DeliveryDetailView({ deliveryId }: { deliveryId: string }) {
         throw new Error(json.error?.message || "Validation failed. Check available stock.");
       }
 
-      setDelivery(json.data);
+      setUpdated(json.data);
       setActionSuccess("Delivery successfully validated and inventory has been moved!");
     } catch (err: unknown) {
       setActionError(err instanceof Error ? err.message : "Failed to validate delivery.");
@@ -171,7 +132,7 @@ export function DeliveryDetailView({ deliveryId }: { deliveryId: string }) {
         throw new Error(json.error?.message || "Failed to cancel delivery.");
       }
 
-      setDelivery(json.data);
+      setUpdated(json.data);
       setActionSuccess("Delivery has been cancelled.");
     } catch (err: unknown) {
       setActionError(err instanceof Error ? err.message : "Failed to cancel delivery.");
@@ -193,7 +154,10 @@ export function DeliveryDetailView({ deliveryId }: { deliveryId: string }) {
         <ErrorState
           title="Delivery not found"
           description={error || "The requested delivery operation could not be loaded."}
-          onRetry={retry}
+          onRetry={() => {
+            setUpdated(null);
+            query.reload();
+          }}
         />
       </div>
     );
@@ -336,7 +300,7 @@ export function DeliveryDetailView({ deliveryId }: { deliveryId: string }) {
         operation={delivery}
         products={products}
         isDraft={isDraft}
-        onOperationUpdated={setDelivery}
+        onOperationUpdated={setUpdated}
       />
     </div>
   );

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
@@ -15,6 +15,7 @@ import {
   userFacingMessage,
   validateOperation,
 } from "@/lib/api";
+import { useApiQuery } from "@/lib/api/use-api-query";
 import { TransferLineItems } from "./TransferLineItems";
 import {
   canMarkReady,
@@ -23,26 +24,14 @@ import {
   formatLocation,
   getStatusBadgeProps,
   isClosed,
-  type ProductOption,
   type TransferOperation,
 } from "./types";
 
 export function TransferDetailView({ transferId }: { transferId: string }) {
-  const [transfer, setTransfer] = useState<TransferOperation | null>(null);
-  const [products, setProducts] = useState<ProductOption[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [updated, setUpdated] = useState<TransferOperation | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
-  const [loadedId, setLoadedId] = useState(transferId);
-
-  if (loadedId !== transferId) {
-    setLoadedId(transferId);
-    setLoading(true);
-    setError(null);
-    setTransfer(null);
-  }
 
   const loadTransfer = useCallback(async () => {
     const [operation, productList] = await Promise.all([getOperation(transferId), getProducts()]);
@@ -51,46 +40,14 @@ export function TransferDetailView({ transferId }: { transferId: string }) {
       throw new Error("This operation is not an internal transfer.");
     }
 
-    return { operation, productList };
+    return { transfer: operation, products: productList };
   }, [transferId]);
 
-  const applyTransfer = useCallback((result: Awaited<ReturnType<typeof loadTransfer>>) => {
-    setTransfer(result.operation);
-    setProducts(result.productList);
-    setError(null);
-    setLoading(false);
-  }, []);
-
-  useEffect(() => {
-    let active = true;
-
-    loadTransfer()
-      .then((result) => {
-        if (active) {
-          applyTransfer(result);
-        }
-      })
-      .catch((err: unknown) => {
-        if (!active) {
-          return;
-        }
-        setError(userFacingMessage(err));
-        setLoading(false);
-      });
-
-    return () => {
-      active = false;
-    };
-  }, [applyTransfer, loadTransfer]);
-
-  function retry() {
-    setLoading(true);
-    setError(null);
-    void loadTransfer().then(applyTransfer).catch((err: unknown) => {
-      setError(userFacingMessage(err));
-      setLoading(false);
-    });
-  }
+  const query = useApiQuery(loadTransfer, transferId);
+  const transfer = updated?.id === transferId ? updated : (query.data?.transfer ?? null);
+  const products = query.data?.products ?? [];
+  const loading = query.status === "loading" && !transfer;
+  const error = query.status === "error" && !transfer ? userFacingMessage(query.error) : null;
 
   async function handleMarkReady() {
     if (!transfer) return;
@@ -105,7 +62,7 @@ export function TransferDetailView({ transferId }: { transferId: string }) {
 
     try {
       const updated = await markOperationReady(transfer.id);
-      setTransfer(updated);
+      setUpdated(updated);
       setActionSuccess("Transfer marked as Ready for validation.");
     } catch (err: unknown) {
       setActionError(userFacingMessage(err));
@@ -123,7 +80,7 @@ export function TransferDetailView({ transferId }: { transferId: string }) {
 
     try {
       const updated = await validateOperation(transfer.id);
-      setTransfer(updated);
+      setUpdated(updated);
       setActionSuccess("Transfer validated. Inventory has been moved.");
     } catch (err: unknown) {
       setActionError(userFacingMessage(err));
@@ -142,7 +99,7 @@ export function TransferDetailView({ transferId }: { transferId: string }) {
 
     try {
       const updated = await cancelOperation(transfer.id);
-      setTransfer(updated);
+      setUpdated(updated);
       setActionSuccess("Transfer has been cancelled.");
     } catch (err: unknown) {
       setActionError(userFacingMessage(err));
@@ -164,7 +121,10 @@ export function TransferDetailView({ transferId }: { transferId: string }) {
         <ErrorState
           title="Transfer not found"
           description={error || "The requested transfer operation could not be loaded."}
-          onRetry={retry}
+          onRetry={() => {
+            setUpdated(null);
+            query.reload();
+          }}
         />
       </div>
     );
@@ -273,7 +233,7 @@ export function TransferDetailView({ transferId }: { transferId: string }) {
         operation={transfer}
         products={products}
         isDraft={draft}
-        onOperationUpdated={setTransfer}
+        onOperationUpdated={setUpdated}
       />
     </div>
   );
