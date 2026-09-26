@@ -1,5 +1,13 @@
+import { redirect } from "next/navigation";
 import { AppShell } from "@/components/layout/AppShell";
+import { getCurrentUser } from "@/server/auth";
 
-export default function WorkspaceLayout({ children }: { children: React.ReactNode }) {
-  return <AppShell>{children}</AppShell>;
+export default async function WorkspaceLayout({ children }: { children: React.ReactNode }) {
+  const user = await getCurrentUser();
+
+  if (!user) {
+    redirect("/login");
+  }
+
+  return <AppShell user={user}>{children}</AppShell>;
 }
