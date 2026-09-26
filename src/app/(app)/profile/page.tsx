@@ -19,7 +19,7 @@ export default async function ProfilePage() {
         description={
           user
             ? "Personal account details for the signed-in user."
-            : "Personal account details for the person using this workspace. No user is signed in yet."
+            : "Sign in to view this account."
         }
         actions={
           user ? (
@@ -36,8 +36,8 @@ export default async function ProfilePage() {
           <h2 className="text-sm font-semibold">Account</h2>
           <p className="mt-1 mb-4 text-xs leading-5 text-muted">
             {user
-              ? "These details come from the signed-in account. Saving does not update them yet."
-              : "These fields are ready for a later sign-in flow. Saving does not create a user."}
+              ? "These details come from the signed-in account. The current API does not update a profile."
+              : "Sign in to see the account attached to this session."}
           </p>
           <ProfileForm
             name={user?.name}

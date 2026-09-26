@@ -1,23 +1,27 @@
+import Link from "next/link";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Card } from "@/components/ui/Card";
-import { EmptyState } from "@/components/ui/EmptyState";
 
 const sections = [
   {
-    title: "Company",
-    description: "Legal name, address, and the company this inventory workspace belongs to.",
-  },
-  {
     title: "Warehouses",
-    description: "Default warehouse used when a receipt, delivery, or transfer is created.",
+    description: "Create and review warehouses used by receipts, deliveries, and transfers.",
+    href: "/warehouses",
   },
   {
-    title: "Units and tracking",
-    description: "Default unit of measure and whether new products track lots or serial numbers.",
+    title: "Locations",
+    description: "Create and edit stock locations, including type, parent, and active status.",
+    href: "/locations",
   },
   {
-    title: "Access",
-    description: "People who can operate inventory, and the roles they hold.",
+    title: "Products",
+    description: "Maintain product name, SKU, category, unit, and active status.",
+    href: "/products",
+  },
+  {
+    title: "Profile",
+    description: "Review the signed-in name, email, and role.",
+    href: "/profile",
   },
 ];
 
@@ -28,7 +32,7 @@ export default function SettingsPage() {
     <div className="space-y-4">
       <PageHeader
         title="Settings"
-        description="Company, warehouse defaults, and access for the inventory workspace. Nothing is stored in this phase."
+        description="Workspace setup lives on the master-data and account pages."
       />
       <div className="grid gap-4 md:grid-cols-2">
         {sections.map((section) => (
@@ -36,7 +40,12 @@ export default function SettingsPage() {
             <div className="border-b border-border px-4 py-3">
               <h2 className="text-sm font-semibold">{section.title}</h2>
             </div>
-            <EmptyState title="Not configured" description={section.description} />
+            <div className="space-y-3 px-4 py-4">
+              <p className="text-sm text-muted">{section.description}</p>
+              <Link href={section.href} className="text-sm font-medium text-accent hover:underline">
+                Open {section.title}
+              </Link>
+            </div>
           </Card>
         ))}
       </div>

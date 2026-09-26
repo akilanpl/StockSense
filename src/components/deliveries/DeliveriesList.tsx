@@ -25,7 +25,6 @@ export function DeliveriesList() {
   const [deliveries, setDeliveries] = useState<DeliveryOperation[]>([]);
   const [locations, setLocations] = useState<LocationOption[]>([]);
   const [products, setProducts] = useState<ProductOption[]>([]);
-  const [defaultUserId, setDefaultUserId] = useState<string | undefined>();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -49,12 +48,6 @@ export function DeliveriesList() {
     }
 
     const opsData: DeliveryOperation[] = opsJson.data || [];
-    let nextUserId: string | undefined;
-    if (opsData.length > 0 && opsData[0]?.createdById) {
-      nextUserId = opsData[0].createdById;
-    } else if (typeof window !== "undefined") {
-      nextUserId = localStorage.getItem("stocksense_user_id") ?? undefined;
-    }
 
     let nextLocations: LocationOption[] | null = null;
     if (locsRes.ok) {
@@ -72,14 +65,11 @@ export function DeliveriesList() {
       }
     }
 
-    return { opsData, nextUserId, nextLocations, nextProducts };
+    return { opsData, nextLocations, nextProducts };
   }, []);
 
   const applyDeliveries = useCallback((result: Awaited<ReturnType<typeof loadDeliveries>>) => {
     setDeliveries(result.opsData);
-    if (result.nextUserId) {
-      setDefaultUserId(result.nextUserId);
-    }
     if (result.nextLocations) {
       setLocations(result.nextLocations);
     }
@@ -154,9 +144,6 @@ export function DeliveriesList() {
 
   function handleDeliveryCreated(newDelivery: DeliveryOperation) {
     setDeliveries((prev) => [newDelivery, ...prev]);
-    if (newDelivery.createdById) {
-      setDefaultUserId(newDelivery.createdById);
-    }
   }
 
   return (
@@ -323,7 +310,6 @@ export function DeliveriesList() {
         onSuccess={handleDeliveryCreated}
         locations={locations}
         products={products}
-        defaultUserId={defaultUserId}
       />
     </div>
   );
