@@ -6,12 +6,26 @@ import { POST as login } from "../src/app/api/auth/login/route";
 import { POST as logout } from "../src/app/api/auth/logout/route";
 import { GET as currentUserRoute } from "../src/app/api/auth/route";
 import { POST as forgotPassword } from "../src/app/api/auth/forgot-password/route";
+import { POST as verifyEmailRoute } from "../src/app/api/auth/verify-email/route";
+import { POST as resendVerification } from "../src/app/api/auth/resend-verification/route";
+import { POST as resetPasswordRoute } from "../src/app/api/auth/reset-password/route";
 import { POST as createOperationRoute } from "../src/app/api/operations/route";
 import { ApiError } from "../src/server/api/errors";
 import { getCurrentUser, requireRole } from "../src/server/auth";
 import { SESSION_COOKIE } from "../src/server/auth/session";
 
 const prisma = new PrismaClient();
+
+const capturedCodes: string[] = [];
+const originalInfo = console.info;
+console.info = (...args: unknown[]) => {
+  const line = args.map((item) => String(item)).join(" ");
+  const match = line.match(/\[DEV EMAIL VERIFICATION\].*code=(\d{6})/);
+  if (match?.[1]) {
+    capturedCodes.push(match[1]);
+  }
+  originalInfo(...args);
+};
 
 async function main() {
   const stamp = Date.now().toString(36);
@@ -26,26 +40,55 @@ async function main() {
     const signupResponse = await signup(jsonRequest("/api/auth/signup", { name: "Auth Verify", email, password, confirmPassword: password }), unusedContext);
     const signupBody = await readJson(signupResponse);
     assert(signupResponse.status === 201, `signup status ${signupResponse.status}`);
-    assert(signupBody.ok === true && signupBody.data.email === email, "signup did not return the user");
-    assert(signupBody.data.role === "INVENTORY_MANAGER", "signup role was not inventory manager");
+    assert(signupBody.ok === true && signupBody.data.verificationRequired === true, "signup did not require verification");
     assertNoSecret(signupBody, password);
-    const userId = signupBody.data.id as string;
-    createdUserIds.push(userId);
+    const signupOtp = takeCode();
+    assertNoSecret(signupBody, signupOtp);
+    assert(!asNext(signupResponse).cookies.get(SESSION_COOKIE)?.value, "signup created a session before verification");
 
-    const stored = await prisma.user.findUniqueOrThrow({ where: { id: userId } });
+    const stored = await prisma.user.findUniqueOrThrow({ where: { email } });
+    const userId = stored.id;
+    createdUserIds.push(userId);
+    assert(stored.emailVerifiedAt === null, "signup marked the email verified");
     assert(stored.passwordHash !== password, "password was stored in plaintext");
     assert(stored.passwordHash.startsWith("scrypt$"), "password was not hashed");
+    const challenge = await prisma.emailVerificationCode.findFirstOrThrow({ where: { userId } });
+    assert(challenge.codeHash !== signupOtp && challenge.codeHash.startsWith("scrypt$"), "OTP was stored in plaintext");
 
     const duplicate = await signup(jsonRequest("/api/auth/signup", { name: "Auth Verify", email, password, confirmPassword: password }), unusedContext);
     const duplicateBody = await readJson(duplicate);
     assert(duplicate.status === 409 && duplicateBody.ok === false, "duplicate email was not rejected");
     assert(duplicateBody.error.code === "DUPLICATE_EMAIL", "duplicate email code was wrong");
 
-    const session = asNext(signupResponse).cookies.get(SESSION_COOKIE)?.value;
-    assert(Boolean(session), "signup did not set a session cookie");
-    const setCookie = signupResponse.headers.get("set-cookie") ?? "";
+    const unverifiedLogin = await login(jsonRequest("/api/auth/login", { email, password }), unusedContext);
+    const unverifiedBody = await readJson(unverifiedLogin);
+    assert(unverifiedLogin.status === 403 && unverifiedBody.error.code === "EMAIL_NOT_VERIFIED", "unverified login was allowed");
+    assert(!asNext(unverifiedLogin).cookies.get(SESSION_COOKIE)?.value, "unverified login set a session");
+
+    const badOtp = await verifyEmailRoute(jsonRequest("/api/auth/verify-email", { email, otp: signupOtp === "000000" ? "111111" : "000000" }), unusedContext);
+    const badOtpBody = await readJson(badOtp);
+    assert(badOtp.status === 400 && badOtpBody.error.code === "OTP_INVALID", "wrong OTP was accepted");
+
+    const resent = await resendVerification(jsonRequest("/api/auth/resend-verification", { email }), unusedContext);
+    const resentBody = await readJson(resent);
+    assert(resent.status === 429 && resentBody.error.code === "OTP_RATE_LIMITED", "resend was not rate limited");
+    assertNoSecret(resentBody, signupOtp);
+
+    const verified = await verifyEmailRoute(jsonRequest("/api/auth/verify-email", { email, otp: signupOtp }), unusedContext);
+    const verifiedBody = await readJson(verified);
+    assert(verified.status === 200 && verifiedBody.data.email === email && verifiedBody.data.role === "INVENTORY_MANAGER", "verification did not return the user");
+    assertNoSecret(verifiedBody, password);
+    assertNoSecret(verifiedBody, signupOtp);
+    const session = asNext(verified).cookies.get(SESSION_COOKIE)?.value;
+    assert(Boolean(session), "verification did not set a session cookie");
+    const setCookie = verified.headers.get("set-cookie") ?? "";
     assert(/httponly/i.test(setCookie), "session cookie is not HTTP-only");
-    assert(!setCookie.includes(password), "session cookie contains the password");
+    const verifiedUser = await prisma.user.findUniqueOrThrow({ where: { id: userId } });
+    assert(verifiedUser.emailVerifiedAt instanceof Date, "email was not marked verified");
+
+    const reused = await verifyEmailRoute(jsonRequest("/api/auth/verify-email", { email, otp: signupOtp }), unusedContext);
+    const reusedBody = await readJson(reused);
+    assert(reused.status === 409 && reusedBody.error.code === "ALREADY_VERIFIED", "used OTP was accepted again");
 
     const current = await getCurrentUser(requestWithSession(session!));
     assert(current?.id === userId && current.email === email && current.role === "INVENTORY_MANAGER", "current user lookup failed");
@@ -125,12 +168,43 @@ async function main() {
     }
     assert(forbidden, "role helper did not reject a disallowed role");
 
+    const unknownReset = await forgotPassword(jsonRequest("/api/auth/forgot-password", { email: `missing.${stamp}@stocksense.local` }), unusedContext);
+    const unknownResetBody = await readJson(unknownReset);
+    assert(unknownReset.status === 200 && unknownResetBody.data.accepted === true, "unknown reset leaked account state");
+
     const reset = await forgotPassword(jsonRequest("/api/auth/forgot-password", { email }), unusedContext);
     const resetBody = await readJson(reset);
-    assert(reset.status === 200 && resetBody.data.delivered === false, "password reset claimed delivery");
-    assert(!JSON.stringify(resetBody).toLowerCase().includes("email sent"), "password reset faked email delivery");
+    assert(reset.status === 200 && resetBody.data.accepted === true, "password reset was not accepted");
+    const resetOtp = takeCode();
+    assertNoSecret(resetBody, resetOtp);
+    const nextPassword = "verify-password-2";
+    const changed = await resetPasswordRoute(
+      jsonRequest("/api/auth/reset-password", { email, otp: resetOtp, password: nextPassword, confirmPassword: nextPassword }),
+      unusedContext,
+    );
+    const changedBody = await readJson(changed);
+    assert(changed.status === 200 && changedBody.data.reset === true, "password reset did not complete");
+    assertNoSecret(changedBody, resetOtp);
+    assert(!asNext(changed).cookies.get(SESSION_COOKIE)?.value, "password reset created a session");
+    const oldLogin = await login(jsonRequest("/api/auth/login", { email, password }), unusedContext);
+    assert(oldLogin.status === 401, "old password still worked");
+    const newLogin = await login(jsonRequest("/api/auth/login", { email, password: nextPassword }), unusedContext);
+    assert(newLogin.status === 200, "new password did not work");
 
-    console.log("Verified signup, login, logout, current user, and protected operation creation.");
+    const expiredEmail = `auth.expired.${stamp}@stocksense.local`;
+    await signup(jsonRequest("/api/auth/signup", { name: "Expired", email: expiredEmail, password, confirmPassword: password }), unusedContext);
+    const expiredOtp = takeCode();
+    const expiredUser = await prisma.user.findUniqueOrThrow({ where: { email: expiredEmail } });
+    createdUserIds.push(expiredUser.id);
+    await prisma.emailVerificationCode.updateMany({
+      where: { userId: expiredUser.id, usedAt: null },
+      data: { expiresAt: new Date(Date.now() - 1000) },
+    });
+    const expired = await verifyEmailRoute(jsonRequest("/api/auth/verify-email", { email: expiredEmail, otp: expiredOtp }), unusedContext);
+    const expiredBody = await readJson(expired);
+    assert(expired.status === 400 && expiredBody.error.code === "OTP_EXPIRED", "expired OTP was accepted");
+
+    console.log("Verified signup, email OTP, login, logout, current user, and protected operation creation.");
   } finally {
     if (operationId) {
       await prisma.stockOperation.delete({ where: { id: operationId } });
@@ -144,6 +218,7 @@ async function main() {
     if (createdUserIds.length > 0) {
       await prisma.user.deleteMany({ where: { id: { in: createdUserIds } } });
     }
+    console.info = originalInfo;
     await prisma.$disconnect();
   }
 }
@@ -177,6 +252,12 @@ async function readJson(response: Response) {
     data: Record<string, unknown>;
     error: { code: string; message: string };
   };
+}
+
+function takeCode() {
+  const code = capturedCodes.shift();
+  assert(code, "verification code was not logged for local delivery");
+  return code;
 }
 
 function assertNoSecret(body: unknown, password: string) {

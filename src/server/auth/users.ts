@@ -8,6 +8,7 @@ const userSelect = {
   name: true,
   email: true,
   role: true,
+  emailVerifiedAt: true,
 } as const;
 
 export async function registerUser(input: { name: string; email: string; password: string }) {
@@ -42,6 +43,10 @@ export async function authenticate(email: string, password: string) {
     throw new ApiError(401, "INVALID_CREDENTIALS", "Email or password is incorrect.");
   }
 
+  if (!user.emailVerifiedAt) {
+    throw new ApiError(403, "EMAIL_NOT_VERIFIED", "Verify your email before signing in.");
+  }
+
   return toAuthUser(user);
 }
 
@@ -51,7 +56,7 @@ export async function findUserById(id: string) {
     select: userSelect,
   });
 
-  return user satisfies AuthUser | null;
+  return user;
 }
 
 export function normalizeEmail(email: string) {

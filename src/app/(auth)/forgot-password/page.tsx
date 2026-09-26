@@ -7,7 +7,7 @@ export default function ForgotPasswordPage() {
     <div>
       <h2 className="text-xl font-semibold tracking-tight">Reset password</h2>
       <p className="mt-1 mb-6 text-sm text-muted">
-        Enter the email on the account. Reset delivery is not connected yet.
+        Request a 6-digit code, then choose a new password. The code expires in 10 minutes.
       </p>
       <ForgotPasswordForm />
     </div>

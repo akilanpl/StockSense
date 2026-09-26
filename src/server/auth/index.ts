@@ -12,7 +12,18 @@ export async function getCurrentUser(request?: Request): Promise<AuthUser | null
     return null;
   }
 
-  return findUserById(userId);
+  const user = await findUserById(userId);
+
+  if (!user?.emailVerifiedAt) {
+    return null;
+  }
+
+  return {
+    id: user.id,
+    name: user.name,
+    email: user.email,
+    role: user.role,
+  };
 }
 
 export async function requireUser(request: Request) {

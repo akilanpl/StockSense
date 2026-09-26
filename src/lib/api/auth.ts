@@ -2,13 +2,37 @@ import { browserRequest } from "@/lib/api/browser";
 import { sessionUserSchema } from "@/types/api";
 import { z } from "zod";
 
+const verificationRequiredSchema = z.object({
+  verificationRequired: z.literal(true),
+});
+
+const acceptedSchema = z.object({
+  accepted: z.literal(true),
+});
+
+const resetSchema = z.object({
+  reset: z.literal(true),
+});
+
 export function signup(input: {
   name: string;
   email: string;
   password: string;
   confirmPassword: string;
 }) {
-  return browserRequest("/api/auth/signup", sessionUserSchema, { method: "POST", body: input });
+  return browserRequest("/api/auth/signup", verificationRequiredSchema, { method: "POST", body: input });
+}
+
+export function verifyEmail(input: { email: string; otp: string }) {
+  return browserRequest("/api/auth/verify-email", sessionUserSchema, { method: "POST", body: input });
+}
+
+export function resendVerification(email: string) {
+  return browserRequest("/api/auth/resend-verification", acceptedSchema, { method: "POST", body: { email } });
+}
+
+export function resetPassword(input: { email: string; otp: string; password: string; confirmPassword: string }) {
+  return browserRequest("/api/auth/reset-password", resetSchema, { method: "POST", body: input });
 }
 
 export function login(input: { email: string; password: string }) {
@@ -24,7 +48,7 @@ export function getSession() {
 }
 
 export function requestPasswordReset(email: string) {
-  return browserRequest("/api/auth/forgot-password", z.object({ delivered: z.literal(false) }), {
+  return browserRequest("/api/auth/forgot-password", acceptedSchema, {
     method: "POST",
     body: { email },
   });

@@ -26,6 +26,29 @@ export const forgotPasswordSchema = z.object({
   email: z.email("Enter a valid email address."),
 });
 
+const otpSchema = z.string().regex(/^\d{6}$/, "Enter the 6-digit code.");
+
+export const verifyEmailSchema = z.object({
+  email: z.email("Enter a valid email address."),
+  otp: otpSchema,
+});
+
+export const resendVerificationSchema = z.object({
+  email: z.email("Enter a valid email address."),
+});
+
+export const resetPasswordSchema = z
+  .object({
+    email: z.email("Enter a valid email address."),
+    otp: otpSchema,
+    password: passwordSchema,
+    confirmPassword: z.string().min(1, "Confirm your password."),
+  })
+  .refine((value) => value.password === value.confirmPassword, {
+    path: ["confirmPassword"],
+    message: "Passwords do not match.",
+  });
+
 export type LoginInput = z.infer<typeof loginSchema>;
 export type SignupInput = z.infer<typeof signupSchema>;
 
