@@ -1,0 +1,11 @@
+// Phase 1 foundation only. Inventory models are added in a later phase.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
