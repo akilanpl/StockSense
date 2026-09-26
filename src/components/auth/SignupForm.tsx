@@ -41,7 +41,7 @@ export function SignupForm() {
 
         void signup(parsed.data)
           .then(() => {
-            router.push("/dashboard");
+            router.push(`/verify-email?email=${encodeURIComponent(parsed.data.email)}`);
             router.refresh();
           })
           .catch((error: unknown) => {

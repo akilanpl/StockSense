@@ -6,7 +6,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { login } from "@/lib/api/auth";
-import { userFacingMessage } from "@/lib/api/errors";
+import { ApiClientError, userFacingMessage } from "@/lib/api/errors";
 import { firstFieldErrors, loginSchema } from "@/validations/auth";
 
 export function LoginForm() {
@@ -43,6 +43,10 @@ export function LoginForm() {
             router.refresh();
           })
           .catch((error: unknown) => {
+            if (error instanceof ApiClientError && error.code === "EMAIL_NOT_VERIFIED") {
+              router.push(`/verify-email?email=${encodeURIComponent(parsed.data.email)}`);
+              return;
+            }
             setNotice(userFacingMessage(error));
             setPending(false);
           });

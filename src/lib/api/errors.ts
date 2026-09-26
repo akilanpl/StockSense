@@ -14,6 +14,10 @@ export class ApiClientError extends Error {
 
 export function userFacingMessage(error: unknown) {
   if (error instanceof ApiClientError) {
+    if (error.code === "EMAIL_NOT_VERIFIED" || error.code === "EMAIL_DELIVERY_FAILED" || error.code === "EMAIL_NOT_CONFIGURED") {
+      return error.message;
+    }
+
     if (error.status === 401) {
       if (error.code === "INVALID_CREDENTIALS") {
         return error.message;
@@ -24,6 +28,10 @@ export function userFacingMessage(error: unknown) {
 
     if (error.status === 403) {
       return "You do not have permission to do that.";
+    }
+
+    if (error.status === 429) {
+      return error.message;
     }
 
     if (error.status === 404) {
