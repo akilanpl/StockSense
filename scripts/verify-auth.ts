@@ -73,7 +73,7 @@ async function main() {
 
     const resent = await resendVerification(jsonRequest("/api/auth/resend-verification", { email }), unusedContext);
     const resentBody = await readJson(resent);
-    assert(resent.status === 429 && resentBody.error.code === "OTP_RATE_LIMITED", "resend was not rate limited");
+    assert(resent.status === 200 && resentBody.data.accepted === true, "resend revealed the per-account cooldown");
     assertNoSecret(resentBody, signupOtp);
 
     const verified = await verifyEmailRoute(jsonRequest("/api/auth/verify-email", { email, otp: signupOtp }), unusedContext);
@@ -112,6 +112,18 @@ async function main() {
     assertNoSecret(goodBody, password);
     const loginSession = asNext(goodLogin).cookies.get(SESSION_COOKIE)?.value;
     assert(Boolean(loginSession), "login did not set a session cookie");
+
+    for (let attempt = 0; attempt < 21; attempt += 1) {
+      const limited = await login(jsonRequest("/api/auth/login", { email, password: "wrong-password" }), unusedContext);
+      if (attempt === 20) {
+        const limitedBody = await readJson(limited);
+        assert(limited.status === 429 && limitedBody.error.code === "LOGIN_RATE_LIMITED", "failed logins were not limited");
+      } else {
+        assert(limited.status === 401, "failed login was not rejected before the limit");
+      }
+    }
+    const loginAfterAttack = await login(jsonRequest("/api/auth/login", { email, password }), unusedContext);
+    assert(loginAfterAttack.status === 200, "valid credentials were locked out after failed-login throttling");
 
     const loggedOut = await logout(new Request("http://localhost/api/auth/logout", { method: "POST" }), unusedContext);
     const logoutBody = await readJson(loggedOut);
@@ -178,6 +190,9 @@ async function main() {
     const resetBody = await readJson(reset);
     assert(reset.status === 200 && resetBody.data.accepted === true, "password reset was not accepted");
     const resetOtp = takeCode();
+    const resetRepeat = await forgotPassword(jsonRequest("/api/auth/forgot-password", { email }), unusedContext);
+    const resetRepeatBody = await readJson(resetRepeat);
+    assert(resetRepeat.status === 200 && resetRepeatBody.data.accepted === true, "password reset revealed the per-account cooldown");
     assertNoSecret(resetBody, resetOtp);
     const nextPassword = "verify-password-2";
     const changed = await resetPasswordRoute(

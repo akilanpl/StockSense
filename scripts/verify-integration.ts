@@ -1,4 +1,4 @@
-import { enforceLoginLimit } from "../src/server/auth/login-limit";
+import { recordFailedLoginAttempt } from "../src/server/auth/login-limit";
 import "dotenv/config";
 import assert from "node:assert/strict";
 import { readdir } from "node:fs/promises";
@@ -127,7 +127,7 @@ async function main() {
   const attempts = await db.emailVerificationCode.findFirstOrThrow({ where: { userId: user.id }, orderBy: { createdAt: "desc" } });
   assert.equal(attempts.attempts, 5); assert(attempts.usedAt);
   console.log("PASS: parallel OTP reuse succeeds once and concurrent failures stop at five attempts.");
-  const rateResults = await Promise.allSettled(Array.from({ length: 22 }, () => enforceLoginLimit(`rate-${stamp}@example.test`)));
+  const rateResults = await Promise.allSettled(Array.from({ length: 22 }, () => recordFailedLoginAttempt(`rate-${stamp}@example.test`)));
   assert.equal(rateResults.filter((r) => r.status === "fulfilled").length, 20);
   console.log("PASS: shared login throttling atomically limits parallel requests to 20 per 15-minute window.");
   const dashboard = await getDashboard();

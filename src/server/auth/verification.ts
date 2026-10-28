@@ -34,8 +34,14 @@ export async function resendEmailVerification(email: string) {
     return { accepted: true as const };
   }
 
-  const code = await issueVerificationCode(user.id, "EMAIL_VERIFY");
-  await sendVerificationEmail({ to: user.email, code, purpose: "EMAIL_VERIFY" });
+  try {
+    const code = await issueVerificationCode(user.id, "EMAIL_VERIFY");
+    await sendVerificationEmail({ to: user.email, code, purpose: "EMAIL_VERIFY" });
+  } catch (error) {
+    // This public endpoint deliberately gives the same response for an unknown
+    // address and for an address whose code is still cooling down.
+    if (!(error instanceof ApiError && error.code === "OTP_RATE_LIMITED")) throw error;
+  }
   return { accepted: true as const };
 }
 
@@ -67,8 +73,13 @@ export async function requestPasswordReset(email: string) {
     return { accepted: true as const };
   }
 
-  const code = await issueVerificationCode(user.id, "PASSWORD_RESET");
-  await sendVerificationEmail({ to: user.email, code, purpose: "PASSWORD_RESET" });
+  try {
+    const code = await issueVerificationCode(user.id, "PASSWORD_RESET");
+    await sendVerificationEmail({ to: user.email, code, purpose: "PASSWORD_RESET" });
+  } catch (error) {
+    // Do not turn per-account cooldown into an account-existence oracle.
+    if (!(error instanceof ApiError && error.code === "OTP_RATE_LIMITED")) throw error;
+  }
   return { accepted: true as const };
 }
 

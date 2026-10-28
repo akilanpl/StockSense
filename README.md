@@ -31,7 +31,7 @@ See [the demo script](docs/DEMO.md) for receive 100 → transfer 30 → deliver 
 4. Run `npm ci`, then `npm run db:migrate` as a controlled release step, then `npm run build` and `npm start`. The build no longer runs migrations against your database.
 5. For a controlled finals demo with disposable data only, `ALLOW_PUBLIC_SIGNUP=true` enables open registration. Keep it false for a real workspace.
 
-The session-version migration invalidates legacy sessions; users must sign in again. Password resets revoke all existing sessions. Login is limited per normalized email to 20 attempts per 15 minutes, shared across application instances. Put broader IP/request throttling at your hosting edge. API writes check origin; all catalog and inventory endpoints require a verified session. External production SMTP requires TLS; loopback relays are permitted for local integration tests.
+The session-version migration invalidates legacy sessions; users must sign in again. Password resets revoke all existing sessions. Failed login attempts are limited per normalized email to 20 attempts per 15 minutes, shared across application instances; a correct password remains usable so an attacker cannot lock out a known address. Put broader IP/request throttling at your hosting edge. API writes check origin; all catalog and inventory endpoints require a verified session. External production SMTP requires TLS; loopback relays are permitted for local integration tests.
 
 Before real business use, configure database backups and restore drills, monitoring and log retention, your approved membership/role policy, and edge throttling. This repository does not include stock reservations, costing, automatic purchasing, multi-company tenancy, or an Odoo connector.
 
