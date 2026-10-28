@@ -67,8 +67,16 @@ test("signup, catalog, receive, transfer, deliver, reconcile, and ledger", async
     await page.getByRole("link", { name: reference, exact: true }).click();
     await page.getByRole("button", { name: /Mark (as )?ready/i }).click();
     await expect(page.getByRole("button", { name: "Validate", exact: true })).toBeVisible();
+    const operationId = new URL(page.url()).pathname.split("/").at(-1);
+    const posting = page.waitForResponse((response) =>
+      new URL(response.url()).pathname === `/api/operations/${operationId}/validate` && response.request().method() === "POST",
+    );
     await page.getByRole("button", { name: "Validate", exact: true }).click();
-    await expect(page.getByRole("button", { name: "Validate", exact: true })).not.toBeVisible();
+    const posted = await posting;
+    expect(posted.status(), await posted.text()).toBe(200);
+    // A pending button can change its label before the transaction commits.
+    // Wait for the visible success state, rather than treating that label change as completion.
+    await expect(page.getByText(/Receipt validated|Transfer validated|Delivery successfully validated|Adjustment validated/)).toBeVisible();
     const record = (await (await api.get(`/api/operations?type=${type}`)).json()).data.find((op: { reference: string }) => op.reference === reference);
     expect(record.status).toBe("DONE"); return record;
   }
