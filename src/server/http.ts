@@ -1,4 +1,6 @@
-import { ZodError } from "zod";
+import { randomUUID } from "node:crypto";
+import { requireUser } from "@/server/auth";
+import { ZodError, z } from "zod";
 import { Prisma } from "@/generated/prisma/client";
 import { ApiError } from "@/server/api/errors";
 import { apiErrorFromUnknown } from "@/server/api/response";
@@ -7,14 +9,48 @@ export type RouteContext<T extends Record<string, string> = Record<string, never
   params: Promise<T>;
 };
 
+export function withPublicApi<C>(handler: (request: Request, context: C) => Promise<Response>) {
+  return withApi(handler, { public: true });
+}
+
 export function withApi<C>(
   handler: (request: Request, context: C) => Promise<Response>,
+  options: { public?: boolean } = {},
 ) {
   return async (request: Request, context: C) => {
+    const requestId = randomUUID();
     try {
-      return await handler(request, context);
+      if (!["GET", "HEAD", "OPTIONS"].includes(request.method)) {
+        const origin = request.headers.get("origin");
+        const url = new URL(request.url);
+        // Next may use an internal hostname in request.url behind a reverse proxy.
+        // Never use x-forwarded-host to select a credential-bearing destination.
+        const expectedOrigin = process.env.APP_ORIGIN ?? `${request.headers.get("x-forwarded-proto") ?? url.protocol.slice(0, -1)}://${request.headers.get("host") ?? url.host}`;
+        if (request.headers.get("sec-fetch-site") === "cross-site" ||
+            (origin && origin !== expectedOrigin)) {
+          throw new ApiError(403, "CROSS_ORIGIN", "Send this request from the StockSense application.");
+        }
+      }
+      if (!options.public) await requireUser(request);
+      if (context && typeof context === "object" && "params" in context) {
+        const params = await (context as { params: Promise<Record<string, string>> }).params;
+        for (const [name, value] of Object.entries(params ?? {})) {
+          if (/id$/i.test(name) && !z.uuid().safeParse(value).success) {
+            throw new ApiError(400, "INVALID_ID", `${name} must be a valid UUID.`);
+          }
+        }
+      }
+      const response = await handler(request, context);
+      response.headers.set("X-Request-Id", requestId);
+      return response;
     } catch (error) {
-      return apiErrorFromUnknown(normalizeError(error));
+      const normalized = normalizeError(error);
+      if (normalized.status >= 500) {
+        console.error("API request failed", { method: request.method, path: new URL(request.url).pathname, requestId, code: normalized.code, errorType: error instanceof Error ? error.name : "unknown" });
+      }
+      const response = apiErrorFromUnknown(normalized);
+      response.headers.set("X-Request-Id", requestId);
+      return response;
     }
   };
 }
@@ -50,6 +86,9 @@ function uniqueConflict(error: Prisma.PrismaClientKnownRequestError) {
   const target = error.meta?.target;
   const fields = Array.isArray(target) ? target.join(" ") : String(target ?? "");
 
+  if (fields.includes("units_of_measure") || fields === "code" && error.meta?.modelName === "UnitOfMeasure") {
+    return new ApiError(409, "DUPLICATE_UNIT_CODE", "A unit with this code already exists. Choose the existing unit.");
+  }
   if (fields.includes("sku")) {
     return new ApiError(409, "DUPLICATE_SKU", "A product with this SKU already exists.");
   }

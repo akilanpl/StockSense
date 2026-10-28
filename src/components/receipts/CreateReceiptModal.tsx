@@ -1,12 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
+import { useApiQuery } from "@/lib/api/use-api-query";
 import { Modal } from "@/components/ui/Modal";
 import { Select } from "@/components/ui/Select";
-import { SEEDED_SUPPLIER, type LocationOption, type ProductOption, type ReceiptOperation } from "./types";
-import { createOperation } from "@/lib/api";
+import { type LocationOption, type ProductOption, type ReceiptOperation } from "./types";
+import { createOperation, getPartners } from "@/lib/api";
 import { userFacingMessage } from "@/lib/api/errors";
 
 export function CreateReceiptModal({
@@ -23,6 +24,8 @@ export function CreateReceiptModal({
   products: ProductOption[];
 }) {
   const destinations = locations.filter((location) => location.isActive && location.type === "INTERNAL");
+  const loadPartners = useCallback(() => getPartners("SUPPLIER"), []);
+  const partners = useApiQuery(loadPartners);
   const [reference, setReference] = useState("");
   const [partnerId, setPartnerId] = useState("");
   const [destinationLocationId, setDestinationLocationId] = useState(destinations[0]?.id ?? "");
@@ -76,15 +79,17 @@ export function CreateReceiptModal({
             });
         }}
       >
+        {partners.status === "error" ? <p role="alert" className="text-xs text-danger">Partners could not load. <button type="button" onClick={partners.reload}>Retry</button></p> : null}
         {error ? <p className="text-xs text-danger">{error}</p> : null}
         <Input label="Reference" hint="Optional. A reference is generated when this is blank." value={reference} onChange={(event) => setReference(event.target.value)} />
         <Select
           label="Supplier"
+          disabled={partners.status !== "ready"}
           value={partnerId}
           onChange={(event) => setPartnerId(event.target.value)}
           options={[
             { value: "", label: "No supplier" },
-            { value: SEEDED_SUPPLIER.id, label: SEEDED_SUPPLIER.name },
+            ...(partners.data ?? []).map((partner) => ({ value: partner.id, label: partner.name })),
           ]}
         />
         <Select

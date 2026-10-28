@@ -51,7 +51,7 @@ export async function verifyEmail(email: string, otp: string) {
   const verified = await getPrisma().user.update({
     where: { id: user.id },
     data: { emailVerifiedAt: new Date() },
-    select: { id: true, name: true, email: true, role: true },
+    select: { id: true, name: true, email: true, role: true, sessionVersion: true },
   });
 
   return verified satisfies AuthUser;
@@ -79,11 +79,11 @@ export async function resetPassword(input: { email: string; otp: string; passwor
     throw new ApiError(403, "EMAIL_NOT_VERIFIED", "Verify your email before resetting the password.");
   }
 
-  await consumeVerificationCode(user.id, input.otp, "PASSWORD_RESET");
-
-  await getPrisma().user.update({
-    where: { id: user.id },
-    data: { passwordHash: hashPassword(input.password) },
+  await consumeVerificationCode(user.id, input.otp, "PASSWORD_RESET", async (tx) => {
+    await tx.user.update({
+      where: { id: user.id },
+      data: { passwordHash: hashPassword(input.password), sessionVersion: { increment: 1 } },
+    });
   });
 
   return { reset: true as const };

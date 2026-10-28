@@ -13,11 +13,11 @@ import { Modal } from "@/components/ui/Modal";
 import { QueryState } from "@/components/ui/QueryState";
 import { Select } from "@/components/ui/Select";
 import { StatusBadge } from "@/components/ui/StatusBadge";
-import { createCategory, createProduct, getCategories, getProducts } from "@/lib/api";
+import { createCategory, createProduct, createUnit, getUnits, getCategories, getProducts } from "@/lib/api";
 import { userFacingMessage } from "@/lib/api/errors";
 import { useApiQuery } from "@/lib/api/use-api-query";
 import { columns } from "@/lib/columns";
-import type { Category, Product } from "@/types/api";
+import type { Category } from "@/types/api";
 
 export function ProductsList() {
   const [search, setSearch] = useState("");
@@ -33,7 +33,7 @@ export function ProductsList() {
           categoryId: categoryId || undefined,
         }),
         getCategories(),
-        getProducts(),
+        getUnits(),
       ]),
     [search, categoryId],
   );
@@ -125,7 +125,7 @@ export function ProductsList() {
         <ProductModal
           open={open}
           categories={query.data[1]}
-          units={unitsFrom(query.data[2])}
+          units={query.data[2]}
           onClose={() => setOpen(false)}
           onCreated={() => {
             setNotice("Product created.");
@@ -155,27 +155,37 @@ function ProductModal({
   const [sku, setSku] = useState("");
   const [categoryId, setCategoryId] = useState(categories[0]?.id ?? "");
   const [newCategory, setNewCategory] = useState("");
+  const [newUnit, setNewUnit] = useState("");
   const [unitId, setUnitId] = useState(units[0]?.id ?? "");
   const [isActive, setIsActive] = useState(true);
   const [error, setError] = useState("");
   const [pending, setPending] = useState(false);
 
   return (
-    <Modal open={open} title="Add product" description="Catalog identity only. Quantity is tracked in stock." onClose={onClose}>
+    <Modal open={open} title="Add product" description="Catalog identity only. Quantity is tracked in stock." onClose={() => { if (!pending) onClose(); }}>
       <form
         className="space-y-3"
         onSubmit={(event) => {
           event.preventDefault();
           setError("");
-          if (!unitId) {
-            setError("A unit of measure is required. Add one through an existing product first.");
+          if (!unitId && !newUnit.trim()) {
+            setError("A unit of measure is required. Enter a new unit code below.");
             return;
           }
           setPending(true);
           void (async () => {
-            const resolvedCategoryId = newCategory.trim()
-              ? (await createCategory({ name: newCategory.trim() })).id
-              : categoryId;
+            let resolvedCategoryId = categoryId;
+            if (newCategory.trim()) {
+              resolvedCategoryId = (await createCategory({ name: newCategory.trim() })).id;
+              setCategoryId(resolvedCategoryId);
+              setNewCategory("");
+            }
+            let resolvedUnitId = unitId;
+            if (newUnit.trim()) {
+              resolvedUnitId = (await createUnit({ code: newUnit.trim(), name: newUnit.trim() })).id;
+              setUnitId(resolvedUnitId);
+              setNewUnit("");
+            }
             if (!resolvedCategoryId) {
               throw new Error("Choose a category.");
             }
@@ -183,15 +193,18 @@ function ProductModal({
               name: name.trim(),
               sku: sku.trim(),
               categoryId: resolvedCategoryId,
-              unitOfMeasureId: unitId,
+              unitOfMeasureId: resolvedUnitId,
               isActive,
             });
           })()
-            .then(onCreated)
+            .then(() => {
+              setName(""); setSku("");
+              onCreated();
+            })
             .catch((err: unknown) => {
               setError(userFacingMessage(err));
-              setPending(false);
-            });
+            })
+            .finally(() => setPending(false));
         }}
       >
         {error ? <p className="text-xs text-danger">{error}</p> : null}
@@ -223,6 +236,7 @@ function ProductModal({
               : [{ value: "", label: "No units available" }]
           }
         />
+        <Input label="New unit code" hint="Optional. Create a unit such as PCS or KG." value={newUnit} onChange={(event) => setNewUnit(event.target.value)} />
         <Select
           label="Status"
           value={isActive ? "active" : "inactive"}
@@ -243,12 +257,4 @@ function ProductModal({
       </form>
     </Modal>
   );
-}
-
-export function unitsFrom(products: Product[]) {
-  const units = new Map<string, string>();
-  for (const product of products) {
-    units.set(product.unitOfMeasureId, product.unitOfMeasureCode);
-  }
-  return [...units.entries()].map(([id, code]) => ({ id, code }));
 }

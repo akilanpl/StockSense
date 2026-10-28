@@ -1,3 +1,4 @@
+import { requireTestDatabase } from "./test-database";
 import "dotenv/config";
 import { NextResponse } from "next/server";
 import { PrismaClient } from "../src/generated/prisma/client";
@@ -28,6 +29,7 @@ console.info = (...args: unknown[]) => {
 };
 
 async function main() {
+  requireTestDatabase();
   const stamp = Date.now().toString(36);
   const email = `auth.${stamp}@stocksense.local`;
   const password = "verify-password-1";
@@ -186,6 +188,7 @@ async function main() {
     assert(changed.status === 200 && changedBody.data.reset === true, "password reset did not complete");
     assertNoSecret(changedBody, resetOtp);
     assert(!asNext(changed).cookies.get(SESSION_COOKIE)?.value, "password reset created a session");
+    assert((await getCurrentUser(requestWithSession(loginSession!))) === null, "password reset did not revoke the previous session");
     const oldLogin = await login(jsonRequest("/api/auth/login", { email, password }), unusedContext);
     assert(oldLogin.status === 401, "old password still worked");
     const newLogin = await login(jsonRequest("/api/auth/login", { email, password: nextPassword }), unusedContext);

@@ -15,7 +15,7 @@ export const createOperationSchema = z.object({
   sourceLocationId: locationId,
   destinationLocationId: locationId,
   createdById: idSchema.optional(),
-  items: z.array(operationItemInputSchema).optional(),
+  items: z.array(operationItemInputSchema).max(1000).optional(),
 });
 
 export const updateOperationSchema = z

@@ -9,17 +9,22 @@ const MAX_AGE_SECONDS = 60 * 60 * 24 * 7;
 type SessionPayload = {
   sub: string;
   exp: number;
+  version: number;
 };
 
-export function createSessionToken(userId: string) {
+export function createSessionToken(userId: string, version = 0) {
   const payload = Buffer.from(
-    JSON.stringify({ sub: userId, exp: Date.now() + MAX_AGE_SECONDS * 1000 } satisfies SessionPayload),
+    JSON.stringify({ sub: userId, version, exp: Date.now() + MAX_AGE_SECONDS * 1000 } satisfies SessionPayload),
   ).toString("base64url");
   const signature = sign(payload);
   return `${payload}.${signature}`;
 }
 
 export function readSessionUserId(token: string | undefined | null) {
+  return readSession(token)?.sub ?? null;
+}
+
+export function readSession(token: string | undefined | null) {
   if (!token) {
     return null;
   }
@@ -41,11 +46,11 @@ export function readSessionUserId(token: string | undefined | null) {
   try {
     const parsed = JSON.parse(Buffer.from(payload, "base64url").toString("utf8")) as Partial<SessionPayload>;
 
-    if (typeof parsed.sub !== "string" || typeof parsed.exp !== "number" || parsed.exp < Date.now()) {
+    if (typeof parsed.sub !== "string" || typeof parsed.exp !== "number" || !Number.isFinite(parsed.exp) || parsed.exp <= Date.now() || !Number.isInteger(parsed.version)) {
       return null;
     }
 
-    return parsed.sub;
+    return parsed as SessionPayload;
   } catch {
     return null;
   }
@@ -62,15 +67,15 @@ export function readSessionToken(request: Request) {
     const [name, ...value] = part.trim().split("=");
 
     if (name === SESSION_COOKIE) {
-      return decodeURIComponent(value.join("="));
+      try { return decodeURIComponent(value.join("=")); } catch { return null; }
     }
   }
 
   return null;
 }
 
-export function withSession(response: NextResponse, userId: string) {
-  response.cookies.set(SESSION_COOKIE, createSessionToken(userId), cookieOptions(MAX_AGE_SECONDS));
+export function withSession(response: NextResponse, userId: string, version = 0) {
+  response.cookies.set(SESSION_COOKIE, createSessionToken(userId, version), cookieOptions(MAX_AGE_SECONDS));
   return response;
 }
 

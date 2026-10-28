@@ -29,8 +29,8 @@ export async function listOperations(filters: OperationFilters) {
   return operations.map(serializeOperation);
 }
 
-export async function getOperation(id: string) {
-  const operation = await getPrisma().stockOperation.findUnique({
+export async function getOperation(id: string, db: Prisma.TransactionClient = getPrisma()) {
+  const operation = await db.stockOperation.findUnique({
     where: { id },
     include: operationInclude,
   });
@@ -92,69 +92,75 @@ export async function updateOperation(
     status?: "WAITING" | "READY";
   },
 ) {
-  const existing = await requireOperation(id);
-  const editsHeader =
-    input.reference !== undefined ||
-    input.partnerId !== undefined ||
-    input.sourceLocationId !== undefined ||
-    input.destinationLocationId !== undefined;
+  return getPrisma().$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT id FROM stock_operations WHERE id = CAST(${id} AS uuid) FOR UPDATE`;
+    const existing = await requireOperation(id, tx);
+    const editsHeader =
+      input.reference !== undefined ||
+      input.partnerId !== undefined ||
+      input.sourceLocationId !== undefined ||
+      input.destinationLocationId !== undefined;
 
-  if (editsHeader) {
-    assertDraft(existing.status, "edit");
-  }
+    if (editsHeader) {
+      assertDraft(existing.status, "edit");
+    }
 
-  if (input.status) {
-    assertCanTransition(existing.status, input.status);
-  }
+    if (input.status) {
+      assertCanTransition(existing.status, input.status);
+    }
 
-  await assertPartner(input.partnerId);
-  await assertLocation(input.sourceLocationId);
-  await assertLocation(input.destinationLocationId);
+    await assertPartner(input.partnerId, tx);
+    await assertLocation(input.sourceLocationId, tx);
+    await assertLocation(input.destinationLocationId, tx);
 
-  const nextStatus = input.status ?? existing.status;
+    const nextStatus = input.status ?? existing.status;
 
-  if (nextStatus === "READY") {
-    assertReadyShape({
-      type: existing.type,
-      sourceLocationId:
-        input.sourceLocationId !== undefined ? input.sourceLocationId : existing.sourceLocationId,
-      destinationLocationId:
-        input.destinationLocationId !== undefined
-          ? input.destinationLocationId
-          : existing.destinationLocationId,
-      items: existing.items,
+    if (nextStatus === "READY") {
+      assertReadyShape({
+        type: existing.type,
+        sourceLocationId:
+          input.sourceLocationId !== undefined ? input.sourceLocationId : existing.sourceLocationId,
+        destinationLocationId:
+          input.destinationLocationId !== undefined
+            ? input.destinationLocationId
+            : existing.destinationLocationId,
+        items: existing.items,
+      });
+    }
+
+    const operation = await tx.stockOperation.update({
+      where: { id },
+      data: {
+        reference: input.reference,
+        partnerId: input.partnerId,
+        sourceLocationId: input.sourceLocationId,
+        destinationLocationId: input.destinationLocationId,
+        status: input.status,
+      },
+      include: operationInclude,
     });
-  }
 
-  const operation = await getPrisma().stockOperation.update({
-    where: { id },
-    data: {
-      reference: input.reference,
-      partnerId: input.partnerId,
-      sourceLocationId: input.sourceLocationId,
-      destinationLocationId: input.destinationLocationId,
-      status: input.status,
-    },
-    include: operationInclude,
-  });
-
-  return serializeOperation(operation);
+    return serializeOperation(operation);
+  }, { timeout: 20_000 });
 }
 
 export async function cancelOperation(id: string) {
-  const existing = await requireOperation(id);
-  assertCanTransition(existing.status, "CANCELED");
+  return getPrisma().$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT id FROM stock_operations WHERE id = CAST(${id} AS uuid) FOR UPDATE`;
+    const existing = await requireOperation(id, tx);
+    assertCanTransition(existing.status, "CANCELED");
 
-  const operation = await getPrisma().stockOperation.update({
-    where: { id },
-    data: {
-      status: "CANCELED",
-      canceledAt: new Date(),
-    },
-    include: operationInclude,
-  });
+    const operation = await tx.stockOperation.update({
+      where: { id },
+      data: {
+        status: "CANCELED",
+        canceledAt: new Date(),
+      },
+      include: operationInclude,
+    });
 
-  return serializeOperation(operation);
+    return serializeOperation(operation);
+  }, { timeout: 20_000 });
 }
 
 export async function markOperationReady(id: string) {
@@ -174,19 +180,22 @@ export async function addOperationItem(
   operationId: string,
   input: { productId: string; quantity: string | number },
 ) {
-  const operation = await requireOperation(operationId);
-  assertDraft(operation.status, "add a line to");
-  await assertProducts([input.productId]);
+  return getPrisma().$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT id FROM stock_operations WHERE id = CAST(${operationId} AS uuid) FOR UPDATE`;
+    const operation = await requireOperation(operationId, tx);
+    assertDraft(operation.status, "add a line to");
+    await assertProducts([input.productId], tx);
 
-  await getPrisma().stockOperationItem.create({
-    data: {
-      operationId,
-      productId: input.productId,
-      requestedQuantity: quantityForOperation(operation.type, input.quantity),
-    },
-  });
+    await tx.stockOperationItem.create({
+      data: {
+        operationId,
+        productId: input.productId,
+        requestedQuantity: quantityForOperation(operation.type, input.quantity),
+      },
+    });
 
-  return getOperation(operationId);
+    return getOperation(operationId, tx);
+  }, { timeout: 20_000 });
 }
 
 export async function updateOperationItem(
@@ -194,42 +203,48 @@ export async function updateOperationItem(
   itemId: string,
   input: { productId?: string; quantity?: string | number },
 ) {
-  const operation = await requireOperation(operationId);
-  assertDraft(operation.status, "edit a line on");
-  const item = operation.items.find((line) => line.id === itemId);
+  return getPrisma().$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT id FROM stock_operations WHERE id = CAST(${operationId} AS uuid) FOR UPDATE`;
+    const operation = await requireOperation(operationId, tx);
+    assertDraft(operation.status, "edit a line on");
+    const item = operation.items.find((line) => line.id === itemId);
 
-  if (!item) {
-    throw new ApiError(404, "NOT_FOUND", "Operation line was not found.");
-  }
+    if (!item) {
+      throw new ApiError(404, "NOT_FOUND", "Operation line was not found.");
+    }
 
-  if (input.productId) {
-    await assertProducts([input.productId]);
-  }
+    if (input.productId) {
+      await assertProducts([input.productId], tx);
+    }
 
-  await getPrisma().stockOperationItem.update({
-    where: { id: itemId },
-    data: {
-      productId: input.productId,
-      requestedQuantity:
-        input.quantity === undefined ? undefined : quantityForOperation(operation.type, input.quantity),
-      processedQuantity: 0,
-    },
-  });
+    await tx.stockOperationItem.update({
+      where: { id: itemId },
+      data: {
+        productId: input.productId,
+        requestedQuantity:
+          input.quantity === undefined ? undefined : quantityForOperation(operation.type, input.quantity),
+        processedQuantity: 0,
+      },
+    });
 
-  return getOperation(operationId);
+    return getOperation(operationId, tx);
+  }, { timeout: 20_000 });
 }
 
 export async function removeOperationItem(operationId: string, itemId: string) {
-  const operation = await requireOperation(operationId);
-  assertDraft(operation.status, "remove a line from");
-  const item = operation.items.find((line) => line.id === itemId);
+  return getPrisma().$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT id FROM stock_operations WHERE id = CAST(${operationId} AS uuid) FOR UPDATE`;
+    const operation = await requireOperation(operationId, tx);
+    assertDraft(operation.status, "remove a line from");
+    const item = operation.items.find((line) => line.id === itemId);
 
-  if (!item) {
-    throw new ApiError(404, "NOT_FOUND", "Operation line was not found.");
-  }
+    if (!item) {
+      throw new ApiError(404, "NOT_FOUND", "Operation line was not found.");
+    }
 
-  await getPrisma().stockOperationItem.delete({ where: { id: itemId } });
-  return getOperation(operationId);
+    await tx.stockOperationItem.delete({ where: { id: itemId } });
+    return getOperation(operationId, tx);
+  }, { timeout: 20_000 });
 }
 
 function assertReadyShape(operation: {
@@ -268,8 +283,8 @@ function assertReadyShape(operation: {
   }
 }
 
-async function requireOperation(id: string) {
-  const operation = await getPrisma().stockOperation.findUnique({
+async function requireOperation(id: string, db: Prisma.TransactionClient = getPrisma()) {
+  const operation = await db.stockOperation.findUnique({
     where: { id },
     include: operationInclude,
   });
@@ -288,23 +303,23 @@ async function assertUser(id: string) {
   }
 }
 
-async function assertPartner(id: string | null | undefined) {
+async function assertPartner(id: string | null | undefined, db: Prisma.TransactionClient = getPrisma()) {
   if (!id) {
     return;
   }
 
-  const partner = await getPrisma().partner.findUnique({ where: { id } });
+  const partner = await db.partner.findUnique({ where: { id } });
   if (!partner) {
     throw new ApiError(404, "NOT_FOUND", "Partner was not found.");
   }
 }
 
-async function assertLocation(id: string | null | undefined) {
+async function assertLocation(id: string | null | undefined, db: Prisma.TransactionClient = getPrisma()) {
   if (!id) {
     return;
   }
 
-  const location = await getPrisma().location.findUnique({ where: { id } });
+  const location = await db.location.findUnique({ where: { id } });
   if (!location) {
     throw new ApiError(404, "NOT_FOUND", "Location was not found.");
   }
@@ -314,8 +329,8 @@ async function assertLocation(id: string | null | undefined) {
   }
 }
 
-async function assertProducts(ids: string[]) {
-  const products = await getPrisma().product.findMany({ where: { id: { in: ids } } });
+async function assertProducts(ids: string[], db: Prisma.TransactionClient = getPrisma()) {
+  const products = await db.product.findMany({ where: { id: { in: ids } } });
   const found = new Set(products.map((product) => product.id));
 
   for (const id of ids) {

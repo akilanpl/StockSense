@@ -32,6 +32,10 @@ export async function sendVerificationEmail(input: VerificationMail) {
       host: process.env.SMTP_HOST,
       port: Number(process.env.SMTP_PORT),
       secure: Number(process.env.SMTP_PORT) === 465,
+      requireTLS: process.env.NODE_ENV === "production" && !["127.0.0.1", "localhost", "::1"].includes(process.env.SMTP_HOST ?? ""),
+      connectionTimeout: 10_000,
+      greetingTimeout: 10_000,
+      socketTimeout: 15_000,
       auth: {
         user: process.env.SMTP_USER,
         pass: process.env.SMTP_PASSWORD,

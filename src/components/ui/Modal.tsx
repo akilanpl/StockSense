@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useId, useRef } from "react";
 import { Button } from "@/components/ui/Button";
 
 type ModalProps = {
@@ -12,52 +12,43 @@ type ModalProps = {
 };
 
 export function Modal({ open, title, description, onClose, children }: ModalProps) {
+  const dialog = useRef<HTMLDialogElement>(null);
+  const titleId = useId();
+  const descriptionId = useId();
   useEffect(() => {
-    if (!open) {
-      return;
-    }
+    const element = dialog.current;
+    if (!open || !element) return;
+    element.showModal();
+    const overflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      element.close();
+      document.body.style.overflow = overflow;
+    };
+  }, [open]);
 
-    function onKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        onClose();
-      }
-    }
-
-    document.addEventListener("keydown", onKeyDown);
-    return () => document.removeEventListener("keydown", onKeyDown);
-  }, [open, onClose]);
-
-  if (!open) {
-    return null;
-  }
-
+  if (!open) return null;
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center p-4 sm:items-center">
-      <button
-        type="button"
-        aria-label="Close dialog"
-        className="absolute inset-0 bg-[#0f172a]/40"
-        onClick={onClose}
-      />
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="dialog-title"
-        className="relative z-10 w-full max-w-lg rounded-lg border border-border bg-card shadow-sm"
-      >
-        <div className="flex items-start justify-between gap-4 border-b border-border px-4 py-3">
-          <div>
-            <h2 id="dialog-title" className="text-sm font-semibold text-foreground">
-              {title}
-            </h2>
-            {description ? <p className="mt-1 text-xs leading-5 text-muted">{description}</p> : null}
-          </div>
-          <Button variant="ghost" size="sm" onClick={onClose} aria-label="Close">
-            Close
-          </Button>
+    <dialog
+      ref={dialog}
+      aria-labelledby={titleId}
+      aria-describedby={description ? descriptionId : undefined}
+      onCancel={(event) => { event.preventDefault(); onClose(); }}
+      onClick={(event) => {
+        if (event.target !== event.currentTarget) return;
+        const bounds = event.currentTarget.getBoundingClientRect();
+        if (event.clientX < bounds.left || event.clientX > bounds.right || event.clientY < bounds.top || event.clientY > bounds.bottom) onClose();
+      }}
+      className="fixed inset-0 m-auto max-h-[90dvh] w-[calc(100%-2rem)] max-w-lg overflow-y-auto rounded-lg border border-border bg-card p-0 text-foreground shadow-sm backdrop:bg-slate-900/40"
+    >
+      <div className="flex items-start justify-between gap-4 border-b border-border px-4 py-3">
+        <div>
+          <h2 id={titleId} className="text-sm font-semibold">{title}</h2>
+          {description ? <p id={descriptionId} className="mt-1 text-xs leading-5 text-muted">{description}</p> : null}
         </div>
-        <div className="px-4 py-4">{children}</div>
+        <Button type="button" variant="ghost" size="sm" onClick={onClose} aria-label="Close">Close</Button>
       </div>
-    </div>
+      <div className="px-4 py-4">{children}</div>
+    </dialog>
   );
 }

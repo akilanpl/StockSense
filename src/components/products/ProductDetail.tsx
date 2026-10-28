@@ -2,20 +2,19 @@
 
 import { useCallback, useState } from "react";
 import Link from "next/link";
-import { unitsFrom } from "@/components/products/ProductsList";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Input } from "@/components/ui/Input";
 import { QueryState } from "@/components/ui/QueryState";
 import { Select } from "@/components/ui/Select";
 import { StatusBadge } from "@/components/ui/StatusBadge";
-import { getCategories, getProduct, getProducts, updateProduct } from "@/lib/api";
+import { getCategories, getProduct, getUnits, updateProduct } from "@/lib/api";
 import { userFacingMessage } from "@/lib/api/errors";
 import { useApiQuery } from "@/lib/api/use-api-query";
 
 export function ProductDetail({ productId }: { productId: string }) {
   const load = useCallback(
-    () => Promise.all([getProduct(productId), getCategories(), getProducts()]),
+    () => Promise.all([getProduct(productId), getCategories(), getUnits()]),
     [productId],
   );
   const query = useApiQuery(load, productId);
@@ -29,7 +28,7 @@ export function ProductDetail({ productId }: { productId: string }) {
         ← Back to Products
       </Link>
       <QueryState status={query.status} data={query.data} error={query.error} onRetry={query.reload} loadingLabel="Loading product">
-        {([product, categories, products]) => (
+        {([product, categories, units]) => (
           <Card className="p-4">
             <div className="mb-4 flex items-center gap-3">
               <h1 className="text-xl font-semibold">{product.name}</h1>
@@ -78,7 +77,7 @@ export function ProductDetail({ productId }: { productId: string }) {
                 name="unitOfMeasureId"
                 label="Unit of measure"
                 defaultValue={product.unitOfMeasureId}
-                options={unitsFrom([product, ...products]).map((unit) => ({
+                options={units.map((unit) => ({
                   value: unit.id,
                   label: unit.code,
                 }))}

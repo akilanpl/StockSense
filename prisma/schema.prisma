@@ -77,6 +77,7 @@ model User {
   passwordHash    String    @map("password_hash")
   role            UserRole
   emailVerifiedAt DateTime? @map("email_verified_at")
+  sessionVersion  Int       @default(0) @map("session_version")
   createdAt       DateTime  @default(now()) @map("created_at")
   updatedAt       DateTime  @updatedAt @map("updated_at")
 
@@ -311,4 +312,14 @@ model ReorderRule {
   @@unique([productId, locationId])
   @@index([locationId])
   @@map("reorder_rules")
+}
+
+// Expired login-limit rows can be removed by a scheduled maintenance job.
+model LoginLimit {
+  key       String   @id
+  attempts  Int
+  expiresAt DateTime @map("expires_at")
+
+  @@index([expiresAt])
+  @@map("login_limits")
 }

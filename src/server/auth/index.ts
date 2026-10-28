@@ -1,12 +1,13 @@
 import { cookies } from "next/headers";
 import { ApiError } from "@/server/api/errors";
-import { readSessionToken, readSessionUserId, SESSION_COOKIE } from "@/server/auth/session";
+import { readSessionToken, readSession, SESSION_COOKIE } from "@/server/auth/session";
 import type { AuthUser } from "@/server/auth/types";
 import { findUserById } from "@/server/auth/users";
 
 export async function getCurrentUser(request?: Request): Promise<AuthUser | null> {
   const token = request ? readSessionToken(request) : (await cookies()).get(SESSION_COOKIE)?.value;
-  const userId = readSessionUserId(token);
+  const session = readSession(token);
+  const userId = session?.sub;
 
   if (!userId) {
     return null;
@@ -14,7 +15,7 @@ export async function getCurrentUser(request?: Request): Promise<AuthUser | null
 
   const user = await findUserById(userId);
 
-  if (!user?.emailVerifiedAt) {
+  if (!user?.emailVerifiedAt || user.sessionVersion !== session?.version) {
     return null;
   }
 

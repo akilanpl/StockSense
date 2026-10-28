@@ -1,11 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
+import { useApiQuery } from "@/lib/api/use-api-query";
 import { Modal } from "@/components/ui/Modal";
 import { Select } from "@/components/ui/Select";
-import { createOperation } from "@/lib/api";
+import { createOperation, getPartners } from "@/lib/api";
 import { userFacingMessage } from "@/lib/api/errors";
 import type { DeliveryOperation, LocationOption, ProductOption } from "./types";
 
@@ -17,10 +18,6 @@ type CreateDeliveryModalProps = {
   products: ProductOption[];
 };
 
-const SEEDED_CUSTOMER = {
-  id: "00000000-0000-4000-8000-0000000000a2",
-  name: "DEV Customer",
-};
 
 export function CreateDeliveryModal({
   open,
@@ -29,6 +26,8 @@ export function CreateDeliveryModal({
   locations,
   products,
 }: CreateDeliveryModalProps) {
+  const loadPartners = useCallback(() => getPartners("CUSTOMER"), []);
+  const partners = useApiQuery(loadPartners);
   const [reference, setReference] = useState("");
   const [partnerId, setPartnerId] = useState("");
   const [sourceLocationId, setSourceLocationId] = useState(locations[0]?.id || "");
@@ -101,6 +100,7 @@ export function CreateDeliveryModal({
       }}
     >
       <form onSubmit={handleSubmit} className="space-y-4">
+        {partners.status === "error" ? <p role="alert" className="text-xs text-danger">Partners could not load. <button type="button" onClick={partners.reload}>Retry</button></p> : null}
         {error ? (
           <div className="rounded-md bg-danger-soft p-3 text-xs font-medium text-danger">
             {error}
@@ -130,11 +130,12 @@ export function CreateDeliveryModal({
 
         <Select
           label="Customer"
+          disabled={partners.status !== "ready"}
           value={partnerId}
           onChange={(event) => setPartnerId(event.target.value)}
           options={[
             { value: "", label: "No customer" },
-            { value: SEEDED_CUSTOMER.id, label: SEEDED_CUSTOMER.name },
+            ...(partners.data ?? []).map((partner) => ({ value: partner.id, label: partner.name })),
           ]}
         />
 

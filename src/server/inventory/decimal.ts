@@ -52,6 +52,10 @@ function parseDecimal(value: unknown, label: string) {
     throw new ApiError(400, "VALIDATION_ERROR", `${label} must be a finite number.`);
   }
 
+  if (decimal.abs().greaterThanOrEqualTo("100000000000000")) {
+    throw new ApiError(400, "VALIDATION_ERROR", `${label} must be below 100000000000000.`);
+  }
+
   if (decimal.decimalPlaces() > SCALE) {
     throw new ApiError(400, "VALIDATION_ERROR", `${label} supports at most ${SCALE} decimal places.`);
   }
