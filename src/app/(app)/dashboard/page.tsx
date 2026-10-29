@@ -1,10 +1,18 @@
+import Link from "next/link";
 import { InventoryHealth } from "@/components/dashboard/InventoryHealth";
 import { KpiCard } from "@/components/dashboard/KpiCard";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Card } from "@/components/ui/Card";
 import { DataTable } from "@/components/ui/DataTable";
 import { StatusBadge } from "@/components/ui/StatusBadge";
-import { getDashboard, getLocations, getMoves, getOperations, getStock, getWarehouses } from "@/lib/api";
+import { getCurrentUser } from "@/server/auth";
+import { redirect } from "next/navigation";
+import { getDashboard } from "@/server/inventory/dashboard";
+import { listLocations as getLocations } from "@/server/catalog/locations";
+import { listMoves as getMoves } from "@/server/inventory/queries";
+import { listOperations as getOperations } from "@/server/operations/operations";
+import { listStock as getStock } from "@/server/inventory/queries";
+import { listWarehouses as getWarehouses } from "@/server/catalog/warehouses";
 import { columns } from "@/lib/columns";
 import { formatLabel, formatTimestamp } from "@/lib/format";
 import type { StatusTone } from "@/types";
@@ -23,13 +31,14 @@ const statusTones: Record<string, StatusTone> = {
 };
 
 export default async function DashboardPage() {
+  if (!(await getCurrentUser())) redirect("/login");
   const [dashboard, moves, operations, locations, warehouses, stock] = await Promise.all([
     getDashboard(),
-    getMoves(),
-    getOperations(),
+    getMoves({}),
+    getOperations({}),
     getLocations(),
     getWarehouses(),
-    getStock(),
+    getStock({}),
   ]);
   const locationCodes = new Map(locations.map((location) => [location.id, location.code]));
   const locationWarehouses = new Map(
@@ -51,7 +60,7 @@ export default async function DashboardPage() {
     {
       label: "Out of Stock",
       value: dashboard.outOfStockCount,
-      hint: "Stock rows whose quantity is zero.",
+      hint: "Active products with no positive stock at any location.",
     },
     {
       label: "Pending Receipts",
@@ -140,7 +149,7 @@ export default async function DashboardPage() {
             id: operation.id,
             cells: [
               formatLabel(operation.type),
-              operation.reference,
+              <Link key="reference" className="text-accent hover:underline" href={`/${({ RECEIPT: "receipts", DELIVERY: "deliveries", TRANSFER: "transfers", ADJUSTMENT: "adjustments" } as const)[operation.type]}/${operation.id}`}>{operation.reference}</Link>,
               warehouseLabel(operation, locationWarehouses, warehouseNames),
               "—",
               <StatusBadge

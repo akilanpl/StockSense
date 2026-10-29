@@ -199,11 +199,8 @@ async function adjust(db: Db, operation: OperationRecord, completedAt: Date) {
     const difference = item.requestedQuantity.minus(recorded);
 
     if (difference.isZero()) {
-      throw new ApiError(
-        400,
-        "INVALID_ADJUSTMENT",
-        "Counted quantity matches the recorded quantity.",
-      );
+      await db.stockOperationItem.update({ where: { id: item.id }, data: { processedQuantity: 0 } });
+      continue;
     }
 
     if (difference.greaterThan(0)) {

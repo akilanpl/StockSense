@@ -28,3 +28,6 @@ export const stockQuerySchema = z.object({
   locationId: optionalId,
   warehouseId: optionalId,
 });
+
+export const productQuerySchema = z.object({ categoryId: optionalId, q: z.string().trim().max(200).optional() });
+export const locationQuerySchema = z.object({ warehouseId: optionalId });

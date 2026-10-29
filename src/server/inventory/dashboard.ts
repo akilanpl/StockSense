@@ -11,9 +11,9 @@ export async function getDashboard() {
     await Promise.all([
       prisma.stockQuant.groupBy({
         by: ["productId"],
-        where: { quantity: { gt: 0 } },
+        where: { quantity: { gt: 0 }, product: { isActive: true } },
       }),
-      prisma.stockQuant.count({ where: { quantity: { equals: 0 } } }),
+      prisma.product.count({ where: { isActive: true, stockQuants: { none: { quantity: { gt: 0 } } } } }),
       prisma.stockOperation.count({
         where: { type: "RECEIPT", status: { in: [...openStatuses] } },
       }),
@@ -33,17 +33,14 @@ export async function getDashboard() {
     ]);
 
   const lowStockItems = [];
+  const quants = rules.length ? await prisma.stockQuant.findMany({
+    where: { OR: rules.map((rule) => ({ productId: rule.productId, locationId: rule.locationId })) },
+  }) : [];
+  const quantityByPair = new Map(quants.map((quant) => [`${quant.productId}:${quant.locationId}`, quant.quantity]));
 
   for (const rule of rules) {
-    const quant = await prisma.stockQuant.findUnique({
-      where: {
-        productId_locationId: {
-          productId: rule.productId,
-          locationId: rule.locationId,
-        },
-      },
-    });
-    const quantity = quant?.quantity ?? new Prisma.Decimal(0);
+    if (!rule.product.isActive || !rule.location.isActive) continue;
+    const quantity = quantityByPair.get(`${rule.productId}:${rule.locationId}`) ?? new Prisma.Decimal(0);
 
     if (quantity.greaterThan(0) && quantity.lessThanOrEqualTo(rule.minimumQuantity)) {
       lowStockItems.push({

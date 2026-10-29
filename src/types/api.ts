@@ -39,6 +39,8 @@ export const unitOfMeasureSchema = z.object({
   code: z.string(),
 });
 
+export const partnerSchema = z.object({ id: z.string(), name: z.string(), type: z.enum(["SUPPLIER", "CUSTOMER"]) });
+
 export const productSchema = z.object({
   id: z.string(),
   name: z.string(),

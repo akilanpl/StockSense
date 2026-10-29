@@ -12,6 +12,7 @@ import { PageHeader } from "@/components/layout/PageHeader";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { StatusLegend } from "@/components/modules/StatusLegend";
 import { operationStatuses } from "@/lib/statuses";
+import { getOperations, getLocations, getProducts } from "@/lib/api";
 import { CreateDeliveryModal } from "./CreateDeliveryModal";
 import {
   type DeliveryOperation,
@@ -36,34 +37,10 @@ export function DeliveriesList() {
   const [isCreateOpen, setIsCreateOpen] = useState(false);
 
   const loadDeliveries = useCallback(async () => {
-    const [opsRes, locsRes, prodsRes] = await Promise.all([
-      fetch("/api/operations?type=DELIVERY"),
-      fetch("/api/locations"),
-      fetch("/api/products"),
+    const [operations, nextLocations, nextProducts] = await Promise.all([
+      getOperations({ type: "DELIVERY" }), getLocations(), getProducts(),
     ]);
-
-    const opsJson = await opsRes.json();
-    if (!opsRes.ok || !opsJson.ok) {
-      throw new Error(opsJson.error?.message || "Failed to load deliveries.");
-    }
-
-    const opsData: DeliveryOperation[] = opsJson.data || [];
-
-    let nextLocations: LocationOption[] | null = null;
-    if (locsRes.ok) {
-      const locsJson = await locsRes.json();
-      if (locsJson.ok && Array.isArray(locsJson.data)) {
-        nextLocations = locsJson.data;
-      }
-    }
-
-    let nextProducts: ProductOption[] | null = null;
-    if (prodsRes.ok) {
-      const prodsJson = await prodsRes.json();
-      if (prodsJson.ok && Array.isArray(prodsJson.data)) {
-        nextProducts = prodsJson.data;
-      }
-    }
+    const opsData = operations.filter((operation): operation is typeof operation & { type: "DELIVERY" } => operation.type === "DELIVERY");
 
     return { opsData, nextLocations, nextProducts };
   }, []);

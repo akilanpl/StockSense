@@ -13,8 +13,8 @@ export function parseInput<T>(schema: z.ZodType<T>, value: unknown) {
 }
 
 export const requiredText = (label: string) =>
-  z.string().trim().min(1, `${label} is required.`);
+  z.string().trim().min(1, `${label} is required.`).max(200, `${label} must be at most 200 characters.`);
 
-export const optionalText = z.string().trim().min(1).nullable().optional();
+export const optionalText = z.string().trim().min(1).max(2000).nullable().optional();
 
 export const idSchema = z.uuid("A valid id is required.");

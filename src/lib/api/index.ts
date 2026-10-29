@@ -2,6 +2,9 @@ export { ApiClientError, userFacingMessage } from "@/lib/api/errors";
 export { setAccessTokenProvider } from "@/lib/api/http";
 export {
   createCategory,
+  createUnit,
+  getUnits,
+  getPartners,
   createLocation,
   createProduct,
   createWarehouse,

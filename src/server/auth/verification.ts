@@ -34,8 +34,14 @@ export async function resendEmailVerification(email: string) {
     return { accepted: true as const };
   }
 
-  const code = await issueVerificationCode(user.id, "EMAIL_VERIFY");
-  await sendVerificationEmail({ to: user.email, code, purpose: "EMAIL_VERIFY" });
+  try {
+    const code = await issueVerificationCode(user.id, "EMAIL_VERIFY");
+    await sendVerificationEmail({ to: user.email, code, purpose: "EMAIL_VERIFY" });
+  } catch (error) {
+    // This public endpoint deliberately gives the same response for an unknown
+    // address and for an address whose code is still cooling down.
+    if (!(error instanceof ApiError && error.code === "OTP_RATE_LIMITED")) throw error;
+  }
   return { accepted: true as const };
 }
 
@@ -51,7 +57,7 @@ export async function verifyEmail(email: string, otp: string) {
   const verified = await getPrisma().user.update({
     where: { id: user.id },
     data: { emailVerifiedAt: new Date() },
-    select: { id: true, name: true, email: true, role: true },
+    select: { id: true, name: true, email: true, role: true, sessionVersion: true },
   });
 
   return verified satisfies AuthUser;
@@ -67,8 +73,13 @@ export async function requestPasswordReset(email: string) {
     return { accepted: true as const };
   }
 
-  const code = await issueVerificationCode(user.id, "PASSWORD_RESET");
-  await sendVerificationEmail({ to: user.email, code, purpose: "PASSWORD_RESET" });
+  try {
+    const code = await issueVerificationCode(user.id, "PASSWORD_RESET");
+    await sendVerificationEmail({ to: user.email, code, purpose: "PASSWORD_RESET" });
+  } catch (error) {
+    // Do not turn per-account cooldown into an account-existence oracle.
+    if (!(error instanceof ApiError && error.code === "OTP_RATE_LIMITED")) throw error;
+  }
   return { accepted: true as const };
 }
 
@@ -79,11 +90,11 @@ export async function resetPassword(input: { email: string; otp: string; passwor
     throw new ApiError(403, "EMAIL_NOT_VERIFIED", "Verify your email before resetting the password.");
   }
 
-  await consumeVerificationCode(user.id, input.otp, "PASSWORD_RESET");
-
-  await getPrisma().user.update({
-    where: { id: user.id },
-    data: { passwordHash: hashPassword(input.password) },
+  await consumeVerificationCode(user.id, input.otp, "PASSWORD_RESET", async (tx) => {
+    await tx.user.update({
+      where: { id: user.id },
+      data: { passwordHash: hashPassword(input.password), sessionVersion: { increment: 1 } },
+    });
   });
 
   return { reset: true as const };

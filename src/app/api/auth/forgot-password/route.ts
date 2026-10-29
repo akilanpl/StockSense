@@ -1,11 +1,11 @@
 import { readJsonBody } from "@/server/api/request";
 import { apiSuccess } from "@/server/api/response";
 import { requestPasswordReset } from "@/server/auth/password-reset";
-import { withApi } from "@/server/http";
+import { withPublicApi } from "@/server/http";
 import { parseInput } from "@/validations/common";
 import { forgotPasswordSchema } from "@/validations/auth";
 
-export const POST = withApi(async (request) => {
+export const POST = withPublicApi(async (request) => {
   const input = parseInput(forgotPasswordSchema, await readJsonBody(request));
   return apiSuccess(await requestPasswordReset(input.email));
 });

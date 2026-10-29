@@ -9,6 +9,7 @@ const userSelect = {
   email: true,
   role: true,
   emailVerifiedAt: true,
+  sessionVersion: true,
 } as const;
 
 export async function registerUser(input: { name: string; email: string; password: string }) {
@@ -69,12 +70,14 @@ function toAuthUser(user: {
   email: string;
   role: "INVENTORY_MANAGER" | "WAREHOUSE_STAFF";
   passwordHash?: string;
+  sessionVersion: number;
 }) {
   return {
     id: user.id,
     name: user.name,
     email: user.email,
     role: user.role,
+    sessionVersion: user.sessionVersion,
   } satisfies AuthUser;
 }
 

@@ -1,3 +1,4 @@
+import { requireTestDatabase } from "./test-database";
 import "dotenv/config";
 import { Prisma, PrismaClient } from "../src/generated/prisma/client";
 import { createLocation, updateLocation } from "../src/server/catalog/locations";
@@ -14,6 +15,7 @@ import { ApiError } from "../src/server/api/errors";
 const prisma = new PrismaClient();
 
 async function main() {
+  requireTestDatabase();
   const stamp = Date.now().toString(36);
   const unit = await prisma.unitOfMeasure.create({
     data: { code: `VERIFY-PCS-${stamp}`, name: "Verify piece" },

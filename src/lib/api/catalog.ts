@@ -1,6 +1,8 @@
 import { request } from "@/lib/api/http";
 import {
   categorySchema,
+  unitOfMeasureSchema,
+  partnerSchema,
   locationSchema,
   productSchema,
   warehouseSchema,
@@ -67,4 +69,16 @@ export function updateLocation(id: string, input: UpdateLocationInput) {
     method: "PUT",
     body: input,
   });
+}
+
+export function getUnits() {
+  return request("/api/units", unitOfMeasureSchema.array());
+}
+
+export function createUnit(input: { code: string; name: string }) {
+  return request("/api/units", unitOfMeasureSchema, { method: "POST", body: input });
+}
+
+export function getPartners(type: "SUPPLIER" | "CUSTOMER") {
+  return request("/api/partners", partnerSchema.array(), { query: { type } });
 }

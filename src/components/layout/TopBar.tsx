@@ -24,7 +24,7 @@ export function TopBar({ user, onMenu }: { user: SessionUser | null; onMenu: () 
         </button>
         <div className="min-w-0">
           <p className="truncate text-sm font-medium text-foreground">{title}</p>
-          <p className="truncate text-xs text-muted">No warehouse selected</p>
+          <p className="truncate text-xs text-muted">Shared inventory workspace</p>
         </div>
       </div>
       <div className="flex items-center gap-2">
