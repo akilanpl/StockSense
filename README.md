@@ -1,6 +1,65 @@
 # StockSense
 
-A Next.js + PostgreSQL inventory application for one shared workspace. Products, locations, receipts, transfers, deliveries, physical counts, current stock, and the movement ledger use the same database and transaction engine.
+**Transactional inventory management with a movement ledger and concurrency-safe stock updates.**
+
+StockSense is a Next.js application backed by PostgreSQL and Prisma for one shared inventory workspace. Receipts, deliveries, internal transfers and physical counts update current quantities and historical movements through the same transaction engine. Catalog management, warehouse locations, authentication and browser workflows surround that engine.
+
+[Inventory engine](src/server/inventory/) · [Database model](prisma/schema.prisma) · [Integration verification](scripts/verify-integration.ts) · [Review evidence](docs/REVIEW.md)
+
+## Inventory model
+
+`StockQuant` holds the current quantity for a unique product/location pair; `Product` does not carry an authoritative on-hand total. `StockMove` records completed movement history, linked to its originating operation. Both use PostgreSQL `Decimal(18,4)` through Prisma Decimal arithmetic, avoiding binary floating-point arithmetic for stock quantities.
+
+```mermaid
+erDiagram
+    Warehouse ||--o{ Location : contains
+    Product ||--o{ StockQuant : has
+    Location ||--o{ StockQuant : holds
+    StockOperation ||--o{ StockOperationItem : requests
+    Product ||--o{ StockOperationItem : identifies
+    StockOperation ||--o{ StockMove : produces
+    Product ||--o{ StockMove : moves
+    Location o|--o{ StockMove : source
+    Location o|--o{ StockMove : destination
+```
+
+Operation headers carry source/destination, partner and creator; line items carry requested and processed quantities. Locations form a warehouse hierarchy. Categories, units of measure and reorder rules provide catalog and replenishment context. Foreign keys retain references to historical records.
+
+## Operation lifecycle and transaction boundary
+
+Operations progress through `DRAFT → WAITING → READY → DONE` (a draft may also move directly to ready); eligible unfinished operations can be canceled. Header edits, line edits, readiness, validation and cancellation all acquire the operation row lock. Validation rechecks the persisted state after acquiring that lock, so two competing requests cannot both publish the same operation. A repeat validation is rejected by the transition rules; the API does not promise general idempotency keys for arbitrary requests.
+
+```mermaid
+sequenceDiagram
+    participant UI as Authenticated client
+    participant API as Operation service
+    participant DB as PostgreSQL transaction
+    UI->>API: Validate operation
+    API->>DB: Lock operation row FOR UPDATE
+    DB-->>API: Current status and lines
+    API->>DB: Acquire sorted product/location advisory locks
+    API->>DB: Check active records and available quantities
+    alt All invariants hold
+        API->>DB: Update quants, append moves, mark DONE
+        DB-->>API: Commit
+        API-->>UI: Completed operation
+    else Invalid state or insufficient stock
+        API->>DB: Roll back entire operation
+        API-->>UI: Validation conflict
+    end
+```
+
+The [validator](src/server/inventory/validate-operation.ts) aggregates repeated product lines before checking delivery/transfer availability. A transfer decrements its source and increments its destination atomically. All affected product/location pairs are deduplicated and sorted before transaction-scoped advisory locking; this also serializes updates when a quant row has not yet been created. The [quantity service](src/server/inventory/stock-quant.ts) enforces nonnegative balances.
+
+Receipts, deliveries and transfers require positive quantities. An adjustment records a physical count, including zero, and applies the difference from the locked current balance. An unchanged count completes with zero processed quantity and no fabricated movement. A failed line rolls back the full operation rather than leaving partial transfers or an inconsistent ledger.
+
+## Authentication and validation
+
+Protected API handlers and server pages resolve the current user before accessing inventory services. Signup requires email verification; password reset, OTP consumption, login throttling and session invalidation have regression coverage. Request schemas validate input before the database transaction, while business invariants are checked again against locked records. User roles are stored, but this version is a shared workspace: role names do not establish tenant isolation or a comprehensive role-based authorization system.
+
+## Verification approach
+
+The integration verifier exercises real PostgreSQL transactions, including controlled concurrent interleavings, competing edits/validation, stock depletion, unchanged counts and authentication races. HTTP and Playwright workflows cover the externally visible signup-to-inventory journey using a loopback SMTP fixture. These are correctness checks; no throughput or production load result is claimed. Commands and disposable-database safeguards follow below.
 
 ## Run locally
 
@@ -81,19 +140,14 @@ The mail fixture binds to loopback only, captures test OTP messages locally, and
 
 `.github/workflows/verify.yml` runs lint, type checks, migrations, auth/inventory/concurrency regressions, the dependency audit, the production build, and both HTTP and Chromium workflows against a disposable PostgreSQL service and loopback mail relay. It runs for pull requests and pushes to main or codex branches. No production secrets or deployment are involved.
 
-## Architecture
+## Source map
 
-```text
-Browser UI -> authenticated API -> catalog / operation services -> PostgreSQL
-Server pages -> current-user check -> the same services ---------^
+| Path | Responsibility |
+|---|---|
+| [src/server/inventory/](src/server/inventory/) | Quantity locking, movement creation and operation validation |
+| [src/server/operations/](src/server/operations/) | Operation mutations and shared record loading |
+| [src/app/](src/app/) | Pages and HTTP route handlers |
+| [prisma/](prisma/) | Relational schema and migrations |
+| [scripts/](scripts/) | Auth, inventory, integration and SMTP verification |
 
-DRAFT -> WAITING -> READY -> DONE
-  |         |        |
-  +---------+--------+----> CANCELED
-
-Validate locks operation, then product/location pairs in stable order:
-  checks + stock quantities + movement ledger + DONE in one transaction
-All header/line edits, readiness and cancellation share the operation lock.
-```
-
-Decimal quantities support four decimal places. Receipts, deliveries and transfers require positive quantities. Adjustments accept zero and unchanged counts; unchanged counts complete without inventing a stock movement.
+Documentation basis: [`94075b7`](https://github.com/akilanpl/StockSense/tree/94075b718ebe8add63bdbcfef3136fcd3f3906ad). Recorded evidence describes its own source versions; updating this README does not rerun the database or browser campaigns.
