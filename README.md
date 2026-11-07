@@ -140,6 +140,8 @@ The mail fixture binds to loopback only, captures test OTP messages locally, and
 
 `.github/workflows/verify.yml` runs lint, type checks, migrations, auth/inventory/concurrency regressions, the dependency audit, the production build, and both HTTP and Chromium workflows against a disposable PostgreSQL service and loopback mail relay. It runs for pull requests and pushes to main or codex branches. No production secrets or deployment are involved.
 
+The TypeScript ESLint parser uses a scoped `minimatch` override (`^11.0.1`, locked to 11.0.5) for the [glob-pattern amplification advisory](https://github.com/advisories/GHSA-g3hv-75wg-m249). This changes the affected development-tool dependency without changing the Next.js or ESLint versions. A fresh 2026-11-07 clean install reported zero npm audit findings; lint, route/type generation and the production build passed locally. Database and browser workflow acceptance is checked separately by the CI workflow above.
+
 ## Source map
 
 | Path | Responsibility |
